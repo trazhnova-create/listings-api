@@ -1,5 +1,5 @@
-
-const listingsModel = require('../models/listingsModel');
+// controllers/listingsController.js
+const { Listing } = require('../models');
 
 function validateListingInput(data, { partial = false } = {}) {
   const errors = [];
@@ -22,41 +22,32 @@ function validateListingInput(data, { partial = false } = {}) {
     }
   }
 
-  if (data.condition !== undefined) {
-    const allowed = ['new', 'used', 'for_parts'];
-    if (!allowed.includes(data.condition)) {
-      errors.push(`Поле "condition" должно быть одним из: ${allowed.join(', ')}`);
-    }
-  }
-
-  if (data.status !== undefined) {
-    const allowed = ['available', 'reserved', 'sold'];
-    if (!allowed.includes(data.status)) {
-      errors.push(`Поле "status" должно быть одним из: ${allowed.join(', ')}`);
-    }
-  }
-
   return errors;
 }
 
-exports.getAllListings = (req, res, next) => {
+exports.getAllListings = async (req, res, next) => {
   try {
     const { category, status, dealType } = req.query;
-    const listings = listingsModel.getAll({ category, status, dealType });
+    const where = {};
+    if (category) where.category = category;
+    if (status) where.status = status;
+    if (dealType) where.dealType = dealType;
+
+    const listings = await Listing.findAll({ where });
     res.status(200).json(listings);
   } catch (err) {
     next(err);
   }
 };
 
-exports.getListingById = (req, res, next) => {
+exports.getListingById = async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     if (Number.isNaN(id)) {
       return res.status(400).json({ error: 'Параметр "id" должен быть числом' });
     }
 
-    const listing = listingsModel.getById(id);
+    const listing = await Listing.findByPk(id);
     if (!listing) {
       return res.status(404).json({ error: 'Listing not found' });
     }
@@ -67,56 +58,64 @@ exports.getListingById = (req, res, next) => {
   }
 };
 
-exports.createListing = (req, res, next) => {
+exports.createListing = async (req, res, next) => {
   try {
     const errors = validateListingInput(req.body);
     if (errors.length > 0) {
       return res.status(400).json({ error: errors.join('; ') });
     }
 
-    const newListing = listingsModel.create(req.body);
-    res.status(201).json(newListing);
+    const listing = await Listing.create(req.body);
+    res.status(201).json(listing);
   } catch (err) {
+    if (err.name === 'SequelizeValidationError') {
+      return res.status(400).json({ error: err.errors.map((e) => e.message).join('; ') });
+    }
     next(err);
   }
 };
 
-exports.updateListing = (req, res, next) => {
+exports.updateListing = async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     if (Number.isNaN(id)) {
       return res.status(400).json({ error: 'Параметр "id" должен быть числом' });
     }
 
-    const errors = validateListingInput(req.body);
+    const errors = validateListingInput(req.body, { partial: true });
     if (errors.length > 0) {
       return res.status(400).json({ error: errors.join('; ') });
     }
 
-    const updated = listingsModel.update(id, req.body);
-    if (!updated) {
+    const listing = await Listing.findByPk(id);
+    if (!listing) {
       return res.status(404).json({ error: 'Listing not found' });
     }
 
-    res.status(200).json(updated);
+    await listing.update(req.body);
+    res.status(200).json(listing);
   } catch (err) {
+    if (err.name === 'SequelizeValidationError') {
+      return res.status(400).json({ error: err.errors.map((e) => e.message).join('; ') });
+    }
     next(err);
   }
 };
 
-exports.deleteListing = (req, res, next) => {
+exports.deleteListing = async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     if (Number.isNaN(id)) {
       return res.status(400).json({ error: 'Параметр "id" должен быть числом' });
     }
 
-    const deleted = listingsModel.remove(id);
-    if (!deleted) {
+    const listing = await Listing.findByPk(id);
+    if (!listing) {
       return res.status(404).json({ error: 'Listing not found' });
     }
 
-    res.status(200).json({ message: 'Listing deleted successfully', listing: deleted });
+    await listing.destroy();
+    res.status(200).json({ message: 'Listing deleted successfully', listing });
   } catch (err) {
     next(err);
   }

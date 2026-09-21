@@ -1,145 +1,124 @@
-# Listings API — Лабораторная работа №1
+# Listings API — Лабораторная работа №2 (PostgreSQL + Sequelize)
 
-REST API для платформы продажи и обмена подержанными вещами (курсовой проект).
-Реализует базовые CRUD-операции над объявлениями (`listings`) с хранением данных
-в памяти сервера, как того требует задание. Node.js + Express.js.
+REST API для платформы продажи и обмена подержанными вещами. Продолжение лабораторной работы №1: та же слоистая архитектура и тот же внешний контракт API, но временный массив в памяти заменён на постоянное хранение данных в PostgreSQL через ORM Sequelize.
 
 ## Предметная область
 
 Ресурс **`listing`** — объявление о продаже или обмене подержанной вещи.
 
-Поля объявления:
+| Поле | Тип (Sequelize) | Тип в БД | Описание |
+|---|---|---|---|
+| `id` | INTEGER | serial, PK | Идентификатор, присваивается автоматически |
+| `title` | STRING | varchar(255) | Название (обязательное) |
+| `description` | TEXT | text | Описание |
+| `category` | STRING | varchar(255) | Категория (обязательное) |
+| `price` | DECIMAL(10,2) | numeric(10,2) | Цена; 0 означает обмен |
+| `dealType` | STRING | varchar(255) | `sale` \| `exchange` — вычисляется автоматически из price |
+| `condition` | STRING | varchar(255) | `new` \| `used` \| `for_parts` |
+| `sellerId` | INTEGER | integer | Условный ID продавца |
+| `status` | STRING | varchar(255) | `available` \| `reserved` \| `sold` |
+| `viewsCount` | INTEGER | integer | Счётчик просмотров (добавлено отдельной миграцией) |
+| `createdAt` / `updatedAt` | DATE | timestamp | Заполняются автоматически Sequelize |
 
-| Поле | Тип | Описание |
-|---|---|---|
-| `id` | number | Идентификатор (генерируется сервером) |
-| `title` | string | Название объявления (обязательное) |
-| `description` | string | Описание вещи |
-| `category` | string | Категория (обязательное), напр. "Электроника", "Одежда" |
-| `price` | number | Цена; `0` означает обмен |
-| `dealType` | string | `sale` \| `exchange` (вычисляется автоматически по price) |
-| `condition` | string | `new` \| `used` \| `for_parts` |
-| `sellerId` | number | Условный ID продавца (без авторизации) |
-| `status` | string | `available` \| `reserved` \| `sold` |
-| `createdAt` | string (ISO) | Дата создания (генерируется сервером) |
+## Стек
+
+Node.js, Express.js, Sequelize, PostgreSQL (локально через Homebrew), sequelize-cli, dotenv.
 
 ## Установка и запуск
 
+### 1. Предварительные требования
+- Node.js установлен
+- PostgreSQL установлен и запущен локально (`brew services start postgresql@16` — на macOS)
+
+### 2. Установка зависимостей
 ```bash
 npm install
-npm run dev     # запуск в режиме разработки (nodemon, автоперезапуск)
+```
+
+### 3. Настройка базы данных
+Создайте локальную базу (если ещё не создана):
+```bash
+createdb listings_db
+```
+
+Создайте файл `.env` в корне проекта:
+```env
+DATABASE_URL=postgres://ваш_логин_мак@127.0.0.1:5432/listings_db
+```
+
+> Файл `.env` не входит в систему контроля версий (в `.gitignore`). При запуске на другой машине его нужно создать заново со своими параметрами подключения.
+
+### 4. Применение миграций
+```bash
+npx sequelize-cli db:migrate
+```
+Создаст таблицу `Listings` (первая миграция) и добавит поле `viewsCount` (вторая миграция).
+
+### 5. Наполнение тестовыми данными (один раз)
+```bash
+npx sequelize-cli db:seed:all
+```
+Добавит 4 стартовых объявления. Повторный запуск создаст дубли — выполняйте один раз.
+
+### 6. Запуск сервера
+```bash
+npm run dev     # режим разработки, с автоперезапуском через nodemon
 # либо
 npm start       # обычный запуск
 ```
 
-Сервер поднимается на `http://localhost:3000` (или на `PORT` из переменных окружения).
+Сервер поднимется на `http://localhost:3000`.
 
 ## Таблица маршрутов
 
 | Метод | Путь | Описание | Успешный статус | Статусы ошибок |
 |---|---|---|---|---|
-| GET | `/listings` | Список всех объявлений. Поддерживает query-фильтры: `?category=`, `?status=`, `?dealType=` | 200 | — |
-| GET | `/listings/:id` | Получить одно объявление по id | 200 | 404 (не найдено), 400 (id не число) |
-| POST | `/listings` | Создать новое объявление | 201 | 400 (невалидные данные) |
-| PUT | `/listings/:id` | Полностью обновить объявление | 200 | 404 (не найдено), 400 (невалидные данные) |
-| DELETE | `/listings/:id` | Удалить объявление | 200 | 404 (не найдено, в т.ч. при повторном удалении) |
+| GET | `/listings` | Список всех объявлений. Фильтры: `?category=`, `?status=`, `?dealType=` | 200 | — |
+| GET | `/listings/:id` | Получить одно объявление по id | 200 | 404, 400 |
+| POST | `/listings` | Создать новое объявление | 201 | 400 |
+| PUT | `/listings/:id` | Полностью обновить объявление | 200 | 404, 400 |
+| DELETE | `/listings/:id` | Удалить объявление | 200 | 404 |
 
-## Примеры curl-запросов
-
-### GET /listings — список всех объявлений
-```bash
-curl -s http://localhost:3000/listings
-```
-
-### GET /listings с фильтром по категории
-```bash
-curl -s "http://localhost:3000/listings?category=Электроника"
-```
-
-### GET /listings/:id — один элемент
-```bash
-curl -s http://localhost:3000/listings/1
-```
-
-### GET /listings/:id — 404, если не найден
-```bash
-curl -s -w "\nStatus: %{http_code}\n" http://localhost:3000/listings/999
-# => {"error":"Listing not found"}  Status: 404
-```
-
-### POST /listings — создать объявление
-```bash
-curl -s -X POST http://localhost:3000/listings \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "Наушники Sony WH-1000XM4",
-    "description": "Комплект полный, коробка сохранена",
-    "category": "Электроника",
-    "price": 12000,
-    "condition": "used",
-    "sellerId": 2
-  }'
-```
-
-### POST /listings — 400 при невалидных данных
-```bash
-curl -s -w "\nStatus: %{http_code}\n" -X POST http://localhost:3000/listings \
-  -H "Content-Type: application/json" \
-  -d '{"category": "Электроника", "price": 1000}'
-# => {"error":"Поле \"title\" обязательно и должно быть непустой строкой"}  Status: 400
-```
-
-### PUT /listings/:id — полное обновление
-```bash
-curl -s -X PUT http://localhost:3000/listings/2 \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "Зимняя куртка The North Face, размер L",
-    "description": "Цена снижена, торг уместен",
-    "category": "Одежда",
-    "price": 2800,
-    "condition": "used",
-    "status": "reserved"
-  }'
-```
-
-### DELETE /listings/:id — удаление
-```bash
-curl -s -X DELETE http://localhost:3000/listings/3
-```
-
-### DELETE /listings/:id — повторное удаление (404)
-```bash
-curl -s -w "\nStatus: %{http_code}\n" -X DELETE http://localhost:3000/listings/3
-# => {"error":"Listing not found"}  Status: 404
-```
-
-## Формат ошибок
-
-Все ошибки API возвращаются в едином формате:
-```json
-{ "error": "текст сообщения" }
-```
+Контракт API идентичен лабораторной работе №1 — та же Postman-коллекция (`postman_collection.json`) подходит без изменений.
 
 ## Структура проекта
 
 ```
 listings-api/
-├── server.js                 # точка входа, конфигурация Express
-├── routes/listings.js        # маршруты ресурса listings
-├── controllers/
-│   └── listingsController.js # обработка запросов, валидация
+├── config/
+│   └── config.js             
+├── migrations/
+│   ├── ..._create-listing.js         
+│   └── ..._add-viewsCount-to-listings.js  
+├── seeders/
+│   └── ..._demo-listings.js   
 ├── models/
-│   └── listingsModel.js      # in-memory "база данных" + доступ к ней
+│   ├── index.js               
+│   └── listing.js              
+├── controllers/
+│   └── listingsController.js  
+├── routes/
+│   └── listings.js            
 ├── middleware/
-│   └── errorHandler.js       # глобальный error-handling middleware
-├── postman_collection.json   # готовая коллекция для Postman
+│   └── errorHandler.js        
+├── .sequelizerc                
+├── .env                        
+├── server.js
 └── README.md
+```
+
+## Полезные команды Sequelize CLI
+
+```bash
+npx sequelize-cli db:migrate           
+npx sequelize-cli db:migrate:undo      
+npx sequelize-cli db:seed:all         
+npx sequelize-cli migration:generate --name имя-миграции
+npx sequelize-cli model:generate --name Имя --attributes поле:тип
 ```
 
 ## Дальнейшее развитие (следующие лабораторные работы)
 
-- Подключение реальной базы данных вместо in-memory массива
-- JWT-аутентификация пользователей
-- Реализация чата между покупателем и продавцом (WebSocket)
+- JWT-аутентификация пользователей (лабораторная работа №3)
+- Реализация чата между покупателем и продавцом
 - Интеграция сервера с React-фронтендом (из 1 части курса)

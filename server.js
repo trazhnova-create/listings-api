@@ -1,7 +1,8 @@
-
+require('dotenv').config();
 const express = require('express');
 const listingsRouter = require('./routes/listings');
 const errorHandler = require('./middleware/errorHandler');
+const { sequelize } = require('./models');   // ← добавить
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -32,4 +33,8 @@ app.use(errorHandler);
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
+
+  sequelize.authenticate()               // ← добавить
+    .then(() => console.log('Database connection established'))
+    .catch((err) => console.error('Unable to connect to the database:', err));
 });
