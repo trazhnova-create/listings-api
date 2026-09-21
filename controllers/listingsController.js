@@ -1,7 +1,6 @@
-// controllers/listingsController.js
+
 const listingsModel = require('../models/listingsModel');
 
-// Валидация входных данных для создания/обновления объявления
 function validateListingInput(data, { partial = false } = {}) {
   const errors = [];
 

@@ -1,7 +1,0 @@
-Server running on http://localhost:3000
-2026-09-07T21:19:14.310Z PUT /listings/2
-2026-09-07T21:19:14.323Z PUT /listings/999
-2026-09-07T21:19:14.329Z DELETE /listings/3
-2026-09-07T21:19:14.336Z DELETE /listings/3
-2026-09-07T21:19:14.342Z GET /
-2026-09-07T21:19:14.350Z GET /unknown-route
