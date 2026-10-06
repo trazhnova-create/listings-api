@@ -1,4 +1,4 @@
-// controllers/listingsController.js
+
 const { Listing } = require('../models');
 
 function validateListingInput(data, { partial = false } = {}) {

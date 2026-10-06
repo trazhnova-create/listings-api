@@ -1,8 +1,11 @@
 require('dotenv').config();
 const express = require('express');
 const listingsRouter = require('./routes/listings');
+const authRouter = require('./routes/auth');
+const profileRouter = require('./routes/profile');
+const adminRouter = require('./routes/admin');
 const errorHandler = require('./middleware/errorHandler');
-const { sequelize } = require('./models');   // ← добавить
+const { sequelize } = require('./models');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -19,11 +22,17 @@ app.get('/', (req, res) => {
     message: 'Listings API is running',
     endpoints: {
       listings: '/listings',
+      auth: '/auth',
+      profile: '/profile',
+      admin: '/admin',
     },
   });
 });
 
 app.use('/listings', listingsRouter);
+app.use('/auth', authRouter);
+app.use('/profile', profileRouter);
+app.use('/admin', adminRouter);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
@@ -34,7 +43,7 @@ app.use(errorHandler);
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 
-  sequelize.authenticate()               // ← добавить
+  sequelize.authenticate()
     .then(() => console.log('Database connection established'))
     .catch((err) => console.error('Unable to connect to the database:', err));
 });
