@@ -30,6 +30,7 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: 'used',
       validate: { isIn: [['new', 'used', 'for_parts']] },
     },
+    image: DataTypes.TEXT,
     sellerId: DataTypes.INTEGER,
     status: {
       type: DataTypes.STRING,

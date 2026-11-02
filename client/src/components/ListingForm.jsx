@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
+import { uploadImage, getErrorMessage } from '../api';
 
 const DRAFT_KEY = 'listingDraft';
 const EMPTY_FORM = { title: '', category: '', price: '', image: '' };
 
 function ListingForm({ onSave, editingItem, onCancelEdit, categories }) {
   const [form, setForm] = useState(EMPTY_FORM);
+  const [progress, setProgress] = useState(null); // null — не грузим, 0..100 — идёт загрузка
+  const [uploadError, setUploadError] = useState('');
 
   useEffect(() => {
     if (editingItem) {
@@ -41,8 +44,26 @@ function ListingForm({ onSave, editingItem, onCancelEdit, categories }) {
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
+  async function handleFile(e) {
+    const file = e.target.files[0];
+    e.target.value = ''; 
+    if (!file) return;
+
+    setUploadError('');
+    setProgress(0);
+    try {
+      const url = await uploadImage(file, setProgress);
+      updateField('image', url);
+    } catch (err) {
+      setUploadError(getErrorMessage(err));
+    } finally {
+      setProgress(null);
+    }
+  }
+
   function handleSubmit(e) {
     e.preventDefault();
+    if (progress !== null) return; 
     if (!form.title.trim() || !form.category || !form.price) return;
 
     onSave({
@@ -50,7 +71,7 @@ function ListingForm({ onSave, editingItem, onCancelEdit, categories }) {
       title: form.title.trim(),
       category: form.category,
       price: Number(form.price),
-      image: form.image.trim(),
+      image: form.image,
     });
 
     if (!editingItem) {
@@ -82,15 +103,34 @@ function ListingForm({ onSave, editingItem, onCancelEdit, categories }) {
         onChange={(e) => updateField('price', e.target.value)}
       />
 
-      <input
-        type="text"
-        placeholder="Ссылка на фото (необязательно)"
-        value={form.image}
-        onChange={(e) => updateField('image', e.target.value)}
-      />
+      <div className="file-field">
+        <label className="file-btn">
+          {form.image ? 'Заменить фото' : 'Выбрать фото'}
+          <input type="file" accept="image/*" onChange={handleFile} hidden />
+        </label>
+
+        {progress !== null && (
+          <div className="progress" title={`${progress}%`}>
+            <div className="progress__bar" style={{ width: `${progress}%` }} />
+          </div>
+        )}
+
+        {form.image && progress === null && (
+          <span className="file-preview">
+            <img src={form.image} alt="" />
+            <button type="button" onClick={() => updateField('image', '')} aria-label="Убрать фото">
+              ×
+            </button>
+          </span>
+        )}
+
+        {uploadError && <span className="modal__error">{uploadError}</span>}
+      </div>
 
       <div className="listing-form__buttons">
-        <button type="submit">{editingItem ? 'Сохранить' : 'Добавить'}</button>
+        <button type="submit" disabled={progress !== null}>
+          {editingItem ? 'Сохранить' : 'Добавить'}
+        </button>
         {editingItem && (
           <button type="button" className="btn-cancel" onClick={onCancelEdit}>
             Отмена
