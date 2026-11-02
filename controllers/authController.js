@@ -47,6 +47,7 @@ exports.login = async (req, res, next) => {
     }
 
     const isMatch = await bcrypt.compare(password, user.passwordHash);
+    
     if (!isMatch) {
       return res.status(401).json({ error: 'Неверный email или пароль' });
     }

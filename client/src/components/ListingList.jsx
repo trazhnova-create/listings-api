@@ -20,6 +20,7 @@ const initialListings = [
 ];
 
 function ListingList() {
+    
   const [listings, setListings] = useLocalStorage('listings', initialListings);
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [sortBy, setSortBy] = useState('new');

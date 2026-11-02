@@ -11,7 +11,7 @@ function authenticate(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded; // { id, email, role, iat, exp }
+    req.user = decoded; 
     next();
   } catch (err) {
     return res.status(401).json({ error: 'Недействительный или истёкший токен' });
