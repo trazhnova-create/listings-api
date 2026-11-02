@@ -7,8 +7,22 @@ body,
 #root {
   margin: 0;
   padding: 0;
+  min-height: 100vh;
 }
 
 body {
+  font-family: 'Golos Text', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: #faf7f1;
+  background-image: url("image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 60 60'%3E%3Cpath d='M30 10L40 20L30 30L20 20Z' fill='none' stroke='%23C8102E' stroke-width='0.5' opacity='0.06'/%3E%3Cpath d='M0 40L10 50L0 60' fill='none' stroke='%23C8102E' stroke-width='0.5' opacity='0.06'/%3E%3Cpath d='M60 40L50 50L60 60' fill='none' stroke='%23C8102E' stroke-width='0.5' opacity='0.06'/%3E%3C/svg%3E");
+  background-size: 60px 60px;
+  color: #22201f;
+  font-size: 15px;
+  line-height: 1.5;
   min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
