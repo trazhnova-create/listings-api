@@ -11,23 +11,29 @@ exports.register = async (req, res, next) => {
     if (!email || !password) {
       return res.status(400).json({ error: 'Поля email и password обязательны' });
     }
-
     if (password.length < 6) {
       return res.status(400).json({ error: 'Пароль должен быть не короче 6 символов' });
     }
 
-    const existing = await User.findOne({ where: { email } });
+    const normalizedEmail = String(email).trim().toLowerCase();
+
+    const existing = await User.findOne({ email: normalizedEmail });
     if (existing) {
       return res.status(400).json({ error: 'Пользователь с таким email уже зарегистрирован' });
     }
 
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
-    const user = await User.create({ email, passwordHash });
+    const user = await User.create({ email: normalizedEmail, passwordHash });
 
     res.status(201).json(user.toSafeObject());
   } catch (err) {
-    if (err.name === 'SequelizeValidationError' || err.name === 'SequelizeUniqueConstraintError') {
-      return res.status(400).json({ error: err.errors.map((e) => e.message).join('; ') });
+    if (err.name === 'ValidationError') {
+      return res
+        .status(400)
+        .json({ error: Object.values(err.errors).map((e) => e.message).join('; ') });
+    }
+        if (err.code === 11000) {
+      return res.status(400).json({ error: 'Пользователь с таким email уже зарегистрирован' });
     }
     next(err);
   }
@@ -41,13 +47,12 @@ exports.login = async (req, res, next) => {
       return res.status(400).json({ error: 'Поля email и password обязательны' });
     }
 
-    const user = await User.findOne({ where: { email } });
+    const user = await User.findOne({ email: String(email).trim().toLowerCase() });
     if (!user) {
       return res.status(401).json({ error: 'Неверный email или пароль' });
     }
 
     const isMatch = await bcrypt.compare(password, user.passwordHash);
-    
     if (!isMatch) {
       return res.status(401).json({ error: 'Неверный email или пароль' });
     }
@@ -66,7 +71,7 @@ exports.login = async (req, res, next) => {
 
 exports.getProfile = async (req, res, next) => {
   try {
-    const user = await User.findByPk(req.user.id);
+    const user = await User.findById(req.user.id);
     if (!user) {
       return res.status(404).json({ error: 'Пользователь не найден' });
     }

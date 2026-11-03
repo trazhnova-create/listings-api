@@ -2,16 +2,15 @@ require('dotenv').config();
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
+const connectDB = require('./db');
 const listingsRouter = require('./routes/listings');
 const authRouter = require('./routes/auth');
 const profileRouter = require('./routes/profile');
 const adminRouter = require('./routes/admin');
 const errorHandler = require('./middleware/errorHandler');
-const { sequelize } = require('./models');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
 
 app.use(cors({
   origin: process.env.CLIENT_URL || 'http://localhost:5173',
@@ -35,7 +34,7 @@ app.use((req, res, next) => {
 
 app.get('/', (req, res) => {
   res.status(200).json({
-    message: 'Listings API is running',
+    message: 'Listings API is running (MongoDB)',
     endpoints: {
       listings: '/listings',
       auth: '/auth',
@@ -56,10 +55,12 @@ app.use((req, res) => {
 
 app.use(errorHandler);
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
 
-  sequelize.authenticate()
-    .then(() => console.log('Database connection established'))
-    .catch((err) => console.error('Unable to connect to the database:', err));
-});
+connectDB()
+  .then(() => {
+    app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+  })
+  .catch((err) => {
+    console.error('MongoDB connection error:', err.message);
+    process.exit(1);
+  });

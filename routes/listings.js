@@ -7,6 +7,17 @@ const listingsController = require('../controllers/listingsController');
 const authenticate = require('../middleware/auth');
 
 
+const OBJECT_ID_RE = /^[0-9a-f]{24}$/i;
+function validateObjectId(req, res, next, value) {
+  if (!OBJECT_ID_RE.test(value)) {
+    return res.status(400).json({ error: 'Некорректный идентификатор' });
+  }
+  next();
+}
+router.param('id', validateObjectId);
+router.param('commentId', validateObjectId);
+
+
 const uploadDir = path.join(__dirname, '..', 'uploads');
 fs.mkdirSync(uploadDir, { recursive: true });
 
@@ -48,9 +59,12 @@ router.get('/:id', listingsController.getListingById);
 
 
 router.post('/', authenticate, listingsController.createListing);
-
 router.put('/:id', authenticate, listingsController.updateListing);
-
 router.delete('/:id', authenticate, listingsController.deleteListing);
+
+
+router.post('/:id/comments', authenticate, listingsController.addComment);
+router.post('/:id/comments/:commentId/like', authenticate, listingsController.likeComment);
+router.delete('/:id/comments/:commentId', authenticate, listingsController.deleteComment);
 
 module.exports = router;

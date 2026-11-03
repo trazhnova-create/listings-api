@@ -1,88 +1,82 @@
-# Listings API + «Барахолка» — Лабораторная работа №5 (взаимодействие React с сервером)
+# Listings API — Лабораторная работа №6 (MongoDB + Mongoose)
 
-Курсовой проект **«Платформа для продажи и обмена подержанными вещами с чатом между пользователями»**. В лабораторной работе №5 клиентское приложение «Барахолка» (React, ЛР №4) вместо `localStorage` работает с REST API из ЛР №1–3 (Node.js + Express + PostgreSQL + JWT).
+REST API для платформы продажи и обмена подержанными вещами. Это альтернативная реализация сервера из ЛР №1–5: реляционная БД PostgreSQL (Sequelize) заменена на документную **MongoDB** (ODM **Mongoose**). Внешний контракт API сохранён, поэтому React-клиент из ЛР №5 работает без изменений.
 
-Ветка репозитория: `25`
+Ветка репозитория: `lab26`
 
 ## Стек
 
-- **Сервер:** Node.js, Express.js, Sequelize, PostgreSQL, JWT (jsonwebtoken), bcrypt, cors, multer
-- **Клиент:** React 19, Vite, axios
+Node.js, Express.js, MongoDB Atlas (кластер M0), Mongoose, JWT (jsonwebtoken), bcrypt, cors, multer, dotenv.
 
-## Возможности
+## Модель данных (документная)
 
-- Получение списка объявлений с сервера со спиннером загрузки и сообщением об ошибке с кнопкой «Повторить».
-- Добавление, редактирование и удаление объявлений с **оптимистичным обновлением** интерфейса и откатом изменений при ошибке сервера (с уведомлением).
-- Регистрация и вход (email + пароль). JWT-токен сохраняется в `localStorage` и автоматически подставляется в запросы через interceptor axios. При истёкшем токене (401) пользователь автоматически разлогинивается.
-- Права доступа: просмотр открыт всем, создание, изменение и удаление — только после входа. Менять и удалять можно свои объявления, администратору доступны любые.
+### Коллекция `listings`
 
-### Дополнительные улучшения
+| Поле | Тип | Описание |
+|---|---|---|
+| `_id` | ObjectId | Идентификатор (в API отдаётся как строка `id`) |
+| `title` | String | Название (обязательное) |
+| `description` | String | Описание |
+| `category` | String | Категория (обязательное) |
+| `price` | Number | Цена; 0 означает обмен |
+| `dealType` | String | `sale` / `exchange`, вычисляется автоматически из цены |
+| `condition` | String | `new` / `used` / `for_parts` |
+| `status` | String | `available` / `reserved` / `sold` |
+| `image` | String | Ссылка на фото |
+| `viewsCount` | Number | Счётчик просмотров |
+| `sellerId` | ObjectId → `users` | Владелец объявления |
+| `tags` | **[String]** | **Массив** тегов |
+| `location` | **{ city, district }** | **Вложенный объект** |
+| `comments` | **[ { userId, author, text, likes, createdAt } ]** | **Массив вложенных документов** |
+| `createdAt` / `updatedAt` | Date | Заполняются автоматически |
 
-| Улучшение | Реализация |
-|---|---|
-| Пагинация | Кнопка «Загрузить ещё», серверные параметры `limit` / `offset`, общее число в заголовке `X-Total-Count` |
-| Поиск на сервере с debounce | Параметр `search` (без учёта регистра, `iLike`), debounce 500 мс на клиенте |
-| Фильтры и сортировка на сервере | Параметры `category`, `minPrice`, `maxPrice`, `sort` |
-| Отмена запросов | `AbortController`: устаревший запрос отменяется при новом вводе и при размонтировании |
-| Повтор запроса (retry) | До 3 попыток с задержкой 500 мс → 1000 мс при сетевой ошибке или 5xx (только для GET) |
-| Загрузка изображений | `FormData` + эндпоинт `POST /listings/upload` (multer), индикатор прогресса загрузки |
+### Коллекция `users`
+
+`email` (уникальный индекс), `passwordHash` (bcrypt), `role` (`user` / `admin`), `createdAt`, `updatedAt`.
+
+### Чем это отличается от PostgreSQL
+
+В реляционной схеме комментарии и теги пришлось бы выносить в отдельные таблицы (`Comments`, `Tags`, связующая `ListingTags`) и собирать через `JOIN`. В MongoDB объявление вместе с комментариями, тегами и адресом хранится одним документом, который читается одним запросом. Платой за это становятся дублирование данных и сложность запросов, которые охватывают много документов.
 
 ## Установка и запуск
 
-### 1. Предварительные требования
-- Node.js
-- PostgreSQL, запущенный локально, база `listings_db`
+### 1. MongoDB Atlas
+1. Зарегистрироваться на cloud.mongodb.com, создать бесплатный кластер M0.
+2. Создать пользователя базы данных, сохранить пароль.
+3. В Network Access добавить свой IP.
+4. Connect → Drivers → скопировать строку подключения и дописать имя базы `listings_db`.
 
-### 2. Сервер (корень репозитория)
+> Если `mongodb+srv://` не подключается (ошибка `queryTxt ETIMEOUT`), смените DNS на `1.1.1.1` / `8.8.8.8` или используйте строку подключения без `+srv`.
 
+### 2. Зависимости
 ```bash
 npm install
 ```
 
-Файл `.env` в корне проекта:
+### 3. Файл `.env` в корне
 ```env
-DATABASE_URL=postgres://ваш_логин:пароль@localhost:5432/listings_db
-JWT_SECRET=любая-длинная-случайная-строка-минимум-32-символа
+MONGO_URI=mongodb+srv://ЛОГИН:ПАРОЛЬ@cluster0.xxxxx.mongodb.net/listings_db?retryWrites=true&w=majority&appName=Cluster0
+JWT_SECRET=длинная-случайная-строка-минимум-32-символа
 ```
-
-Миграции и тестовые данные:
+Сгенерировать секрет:
 ```bash
-npx sequelize-cli db:migrate
-npx sequelize-cli db:seed:all
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
-Сид создаёт 4 объявления и администратора: `admin@listings.local` / `Admin12345!`.
+`.env` не входит в систему контроля версий.
 
-Запуск:
+### 4. Тестовые данные (один раз)
+```bash
+npm run seed
+```
+Скрипт очищает коллекции и создаёт 2 пользователей и 4 объявления.
+- администратор: `admin@listings.local` / `Admin12345!`
+- пользователь: `seller@test.com` / `MyPass123`
+
+### 5. Запуск
 ```bash
 npm run dev
 ```
-Сервер: `http://localhost:3000`.
-
-Имитация медленного сервера (для проверки спиннера):
-```bash
-DELAY_MS=1500 npm run dev
-```
-
-### 3. Клиент (папка `client`)
-
-```bash
-cd client
-npm install
-```
-
-Файл `client/.env`:
-```env
-VITE_API_URL=http://localhost:3000
-```
-Vite читает `.env` только при старте — после изменения перезапустите его.
-
-Запуск:
-```bash
-npm run dev
-```
-Клиент: `http://localhost:5173`.
-
-> Файлы `.env` не входят в систему контроля версий. Папка `uploads/` (загруженные фото) тоже в `.gitignore`.
+Сервер: `http://localhost:3000`. Клиент (папка `client`) запускается отдельно командой `npm run dev` в ней.
 
 ## Маршруты API
 
@@ -90,72 +84,66 @@ npm run dev
 
 | Метод | Путь | Описание | Доступ | Статусы |
 |---|---|---|---|---|
-| GET | `/listings` | Список объявлений. Параметры: `search`, `category`, `minPrice`, `maxPrice`, `sort` (`new`, `old`, `priceAsc`, `priceDesc`), `limit`, `offset`. Общее число — в заголовке `X-Total-Count` | все | 200 |
-| GET | `/listings/:id` | Одно объявление | все | 200, 400, 404 |
-| POST | `/listings` | Создать объявление (владелец берётся из токена) | токен | 201, 400, 401 |
-| PUT | `/listings/:id` | Изменить объявление | владелец / админ | 200, 400, 401, 403, 404 |
-| DELETE | `/listings/:id` | Удалить объявление | владелец / админ | 200, 400, 401, 403, 404 |
-| POST | `/listings/upload` | Загрузить фото (`multipart/form-data`, поле `image`, до 5 МБ), возвращает `{ url }` | токен | 201, 400, 401 |
+| GET | `/listings` | Список. Параметры: `search`, `category`, `tag`, `city`, `minPrice`, `maxPrice`, `sort`, `limit`, `offset`. Общее число в заголовке `X-Total-Count` | все | 200 |
+| GET | `/listings/:id` | Одно объявление (счётчик просмотров +1 через `$inc`) | все | 200, 400, 404 |
+| POST | `/listings` | Создать (владелец берётся из токена) | токен | 201, 400, 401 |
+| PUT | `/listings/:id` | Изменить | владелец / админ | 200, 400, 401, 403, 404 |
+| DELETE | `/listings/:id` | Удалить, в ответе удалённый документ | владелец / админ | 200, 401, 403, 404 |
+| POST | `/listings/upload` | Загрузить фото (`multipart/form-data`, поле `image`) | токен | 201, 400, 401 |
 
-### Аутентификация (из ЛР №3)
+### Вложенные документы (комментарии)
+
+| Метод | Путь | Описание | Оператор MongoDB |
+|---|---|---|---|
+| POST | `/listings/:id/comments` | Добавить комментарий | `$push` |
+| POST | `/listings/:id/comments/:commentId/like` | Поставить лайк комментарию (обновление элемента внутри массива) | `$inc` + позиционный `$` |
+| DELETE | `/listings/:id/comments/:commentId` | Удалить комментарий (автор или админ) | `$pull` |
+
+### Аутентификация
 
 | Метод | Путь | Описание | Доступ |
 |---|---|---|---|
-| POST | `/auth/register` | Регистрация (email, password) | все |
+| POST | `/auth/register` | Регистрация | все |
 | POST | `/auth/login` | Вход, выдача JWT | все |
-| GET | `/profile` | Данные текущего пользователя | токен |
+| GET | `/profile` | Текущий пользователь | токен |
 | GET | `/admin/users` | Список пользователей | токен + роль `admin` |
 
-Токен передаётся в заголовке `Authorization: Bearer <token>`.
+Токен передаётся заголовком `Authorization: Bearer <token>`. Идентификаторы `:id` и `:commentId` — это ObjectId (24 hex-символа), при неверном формате сервер возвращает 400.
 
-## Соответствие требованиям лабораторной работы
+## Использованные возможности Mongoose
 
-| Требование | Где реализовано |
-|---|---|
-| Сервис API на axios с interceptor токена | `client/src/api.js` |
-| GET со состояниями загрузки и ошибки, кнопка «Повторить» | `client/src/components/ListingList.jsx`, `renderContent()` |
-| POST с оптимистичным обновлением | `createNew` в `ListingList.jsx` |
-| PUT с оптимистичным обновлением и откатом | `editExisting` в `ListingList.jsx` |
-| DELETE с оптимистичным обновлением и откатом | `removeListing` в `ListingList.jsx` |
-| Дополнительные улучшения | `ListingList.jsx`, `api.js`, `ListingForm.jsx`, `routes/listings.js` |
-| CORS на сервере | `server.js` |
+- схемы и модели, вложенный документ (`commentSchema`), массивы, вложенный объект;
+- валидация (`required`, `enum`, `min`, `maxlength`, `match`) и хук `pre('validate')` для пересчёта `dealType`;
+- метод экземпляра `canBeModifiedBy`;
+- индексы: уникальный по `users.email`, составной `{category, price}`, по `tags`;
+- цепочки запросов `find().sort().skip().limit()`, `countDocuments`;
+- `findByIdAndUpdate`, `findOneAndUpdate`, `findByIdAndDelete`, `updateOne`;
+- `toJSON`-преобразование (`_id` → `id`).
 
 ## Структура проекта
 
 ```
 listings-api/
-├── client/                         # React-приложение
-│   ├── .env
-│   └── src/
-│       ├── api.js                  # axios, interceptors, retry, запросы к API
-│       ├── AuthContext.jsx         # состояние авторизации
-│       ├── App.jsx
-│       ├── App.css
-│       └── components/
-│           ├── ListingList.jsx     # список, CRUD, пагинация, фильтры
-│           ├── ListingForm.jsx     # форма, загрузка фото
-│           ├── ListingFilters.jsx  # панель фильтров
-│           └── AuthModal.jsx       # окно входа / регистрации
-├── config/config.js
+├── client/                    # React-клиент (ЛР №5), без изменений
 ├── controllers/
 │   ├── listingsController.js
 │   ├── authController.js
 │   └── adminController.js
-├── middleware/
-│   ├── auth.js
-│   ├── isAdmin.js
-│   └── errorHandler.js
-├── migrations/
+├── middleware/                # auth, isAdmin, errorHandler
 ├── models/
+│   ├── index.js
+│   ├── listing.js
+│   └── user.js
 ├── routes/
-├── seeders/
-├── uploads/                     
-├── .env
+├── scripts/
+│   └── seed.js                # тестовые данные
+├── uploads/                   # загруженные фото (не в git)
+├── db.js                      # подключение к MongoDB
 ├── server.js
+├── .env
 └── README.md
 ```
 
-## Дальнейшее развитие
+## Связь с предыдущими работами
 
-- Реализация чата между покупателем и продавцом
-- Привязка избранного и откликов к пользователю
+Реализация на PostgreSQL + Sequelize находится в ветке `lab25`. В ветке `lab26` сервер переписан под MongoDB, маршруты и формат ответов сохранены.

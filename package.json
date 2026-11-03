@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "seed": "node scripts/seed.js",
     "dev": "nodemon server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -17,10 +18,8 @@
     "dotenv": "^18.0.1",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
-    "multer": "^2.5.0",
-    "pg": "^8.23.0",
-    "pg-hstore": "^2.3.4",
-    "sequelize": "^6.37.8"
+    "mongoose": "^9.11.4",
+    "multer": "^2.5.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

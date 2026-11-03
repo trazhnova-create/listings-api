@@ -1,38 +1,24 @@
-'use strict';
-const { Model } = require('sequelize');
+const mongoose = require('mongoose');
 
-module.exports = (sequelize, DataTypes) => {
-  class User extends Model {
-    toSafeObject() {
-      const { id, email, role, createdAt } = this;
-      return { id, email, role, createdAt };
-    }
-  }
-
-  User.init({
+const userSchema = new mongoose.Schema(
+  {
     email: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      unique: true,
-      validate: {
-        isEmail: { msg: 'Некорректный email' },
-        notEmpty: { msg: 'Поле email обязательно' },
-      },
+      type: String,
+      required: [true, 'Поле email обязательно'],
+      unique: true, 
+      lowercase: true,
+      trim: true,
+      match: [/^\S+@\S+\.\S+$/, 'Некорректный email'],
     },
-    passwordHash: {
-      type: DataTypes.STRING,
-      allowNull: false,
-    },
-    role: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      defaultValue: 'user',
-      validate: { isIn: [['user', 'admin']] },
-    },
-  }, {
-    sequelize,
-    modelName: 'User',
-  });
+    passwordHash: { type: String, required: true },
+    role: { type: String, enum: ['user', 'admin'], default: 'user' },
+  },
+  { timestamps: true }
+);
 
-  return User;
+
+userSchema.methods.toSafeObject = function () {
+  return { id: this.id, email: this.email, role: this.role, createdAt: this.createdAt };
 };
+
+module.exports = mongoose.model('User', userSchema);
