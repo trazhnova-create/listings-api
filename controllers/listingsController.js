@@ -1,7 +1,7 @@
-// controllers/listingsController.js
+
 const { Listing } = require('../models');
 
-// Поля, которые клиент вправе передавать (sellerId, viewsCount, comments задаёт только сервер)
+
 const ALLOWED_FIELDS = [
   'title', 'description', 'category', 'price',
   'condition', 'status', 'image', 'tags', 'location',
@@ -10,7 +10,7 @@ const ALLOWED_FIELDS = [
 const pickAllowed = (body) =>
   Object.fromEntries(Object.entries(body).filter(([key]) => ALLOWED_FIELDS.includes(key)));
 
-// Экранируем спецсимволы, чтобы поиск воспринимал ввод как обычный текст
+
 const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 function validateListingInput(data, { partial = false } = {}) {
@@ -43,7 +43,7 @@ function validateListingInput(data, { partial = false } = {}) {
   return errors;
 }
 
-// Ошибки Mongoose: валидация и неверный тип значения -> 400, остальное -> errorHandler
+
 function handleDbError(err, res, next) {
   if (err.name === 'ValidationError') {
     return res
@@ -56,7 +56,7 @@ function handleDbError(err, res, next) {
   return next(err);
 }
 
-// ---------- Объявления ----------
+
 
 exports.getAllListings = async (req, res, next) => {
   try {
@@ -66,18 +66,18 @@ exports.getAllListings = async (req, res, next) => {
     if (status) filter.status = status;
     if (dealType) filter.dealType = dealType;
 
-    // массив содержит значение: GET /listings?tag=телефон
+    
     if (tag) filter.tags = tag;
 
-    // поиск по вложенному полю: GET /listings?city=Минск
+    
     if (city) filter['location.city'] = city;
 
-    // поиск по названию без учёта регистра
+    
     if (search && search.trim()) {
       filter.title = { $regex: escapeRegex(search.trim()), $options: 'i' };
     }
 
-    // диапазон цены
+   
     const min = Number(minPrice);
     const max = Number(maxPrice);
     if (minPrice && Number.isFinite(min)) filter.price = { ...filter.price, $gte: min };
@@ -90,10 +90,10 @@ exports.getAllListings = async (req, res, next) => {
       priceDesc: { price: -1, _id: -1 },
     };
 
-    // цепочка Query: find().sort().skip().limit()
+    
     let query = Listing.find(filter).sort(sorts[sort] || sorts.new);
 
-    // пагинация: если limit не передали, отдаём всё
+    
     const limit = Number(req.query.limit);
     if (limit > 0) {
       query = query.skip(Number(req.query.offset) || 0).limit(Math.min(limit, 50));
@@ -110,7 +110,7 @@ exports.getAllListings = async (req, res, next) => {
 
 exports.getListingById = async (req, res, next) => {
   try {
-    // $inc атомарно увеличивает счётчик просмотров и сразу возвращает документ
+    
     const listing = await Listing.findByIdAndUpdate(
       req.params.id,
       { $inc: { viewsCount: 1 } },
@@ -132,7 +132,7 @@ exports.createListing = async (req, res, next) => {
       return res.status(400).json({ error: errors.join('; ') });
     }
 
-    // Продавец берётся из токена, а не из тела запроса
+    
     const listing = await Listing.create({ ...pickAllowed(req.body), sellerId: req.user.id });
     res.status(201).json(listing);
   } catch (err) {
@@ -155,7 +155,7 @@ exports.updateListing = async (req, res, next) => {
       return res.status(403).json({ error: 'Нельзя изменять чужое объявление' });
     }
 
-    // save() запускает валидацию и хук pre('validate') (пересчёт dealType)
+    
     listing.set(pickAllowed(req.body));
     await listing.save();
     res.status(200).json(listing);
@@ -174,7 +174,7 @@ exports.deleteListing = async (req, res, next) => {
       return res.status(403).json({ error: 'Нельзя удалять чужое объявление' });
     }
 
-    // findByIdAndDelete удаляет документ и возвращает его
+    
     const deleted = await Listing.findByIdAndDelete(req.params.id);
     res.status(200).json({ message: 'Listing deleted successfully', listing: deleted });
   } catch (err) {
@@ -182,9 +182,7 @@ exports.deleteListing = async (req, res, next) => {
   }
 };
 
-// ---------- Комментарии (массив вложенных документов) ----------
 
-// POST /listings/:id/comments — добавить элемент в массив ($push)
 exports.addComment = async (req, res, next) => {
   try {
     const text = typeof req.body.text === 'string' ? req.body.text.trim() : '';
@@ -207,8 +205,7 @@ exports.addComment = async (req, res, next) => {
   }
 };
 
-// POST /listings/:id/comments/:commentId/like — изменить элемент ВНУТРИ массива
-// Позиционный оператор $ указывает на найденный по условию элемент массива
+
 exports.likeComment = async (req, res, next) => {
   try {
     const listing = await Listing.findOneAndUpdate(
@@ -226,7 +223,7 @@ exports.likeComment = async (req, res, next) => {
   }
 };
 
-// DELETE /listings/:id/comments/:commentId — удалить элемент массива ($pull)
+
 exports.deleteComment = async (req, res, next) => {
   try {
     const listing = await Listing.findById(req.params.id);
