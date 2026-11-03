@@ -22,7 +22,7 @@ export const CATEGORIES = [
   'Другое',
 ];
 
-const PAGE_SIZE = 5; 
+const PAGE_SIZE = 4; 
 const DEFAULT_PARAMS = { search: '', category: 'all', sort: 'new', minPrice: '', maxPrice: '' };
 
 function buildQuery(p) {
@@ -193,6 +193,7 @@ function ListingList() {
 
   
   async function removeListing(id) {
+    if (!window.confirm('Удалить объявление?')) return;
     const removed = listings.find((item) => item.id === id);
     setListings((prev) => prev.filter((item) => item.id !== id));
     setTotal((t) => t - 1);
