@@ -1,5 +1,5 @@
 const dns = require('node:dns');
-dns.setServers(['1.1.1.1', '8.8.8.8']); // обход проблем с SRV/TXT-запросами у провайдера
+dns.setServers(['1.1.1.1', '8.8.8.8']); 
 const mongoose = require('mongoose');
 
 

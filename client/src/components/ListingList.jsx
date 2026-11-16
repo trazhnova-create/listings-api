@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import ListingForm from './ListingForm';
 import ListingFilters from './ListingFilters';
 import { useAuth } from '../AuthContext';
+import { useChat } from '../ChatContext';
 import {
   fetchListings,
   addListing,
@@ -25,6 +26,7 @@ export const CATEGORIES = [
 const PAGE_SIZE = 5; 
 const DEFAULT_PARAMS = { search: '', category: 'all', sort: 'new', minPrice: '', maxPrice: '' };
 
+
 function buildQuery(p) {
   const q = { sort: p.sort };
   if (p.search) q.search = p.search;
@@ -36,6 +38,7 @@ function buildQuery(p) {
 
 function ListingList() {
   const { user, openAuth } = useAuth();
+  const { startChat } = useChat();
 
   const [listings, setListings] = useState([]);
   const [total, setTotal] = useState(0); 
@@ -109,7 +112,7 @@ function ListingList() {
     try {
       const query = { ...buildQuery(params), limit: PAGE_SIZE, offset };
       const { items, total } = await fetchListings(query);
-      if (keyAtStart !== paramsKeyRef.current) return;
+      if (keyAtStart !== paramsKeyRef.current) return; 
       
       setListings((prev) => [...prev, ...items.filter((it) => !prev.some((p) => p.id === it.id))]);
       setTotal(total);
@@ -268,24 +271,31 @@ function ListingList() {
                 </div>
               </div>
 
-              {canManage(item) && (
-                <div className="listing-card__actions">
-                  <button
-                    className="btn-edit"
-                    disabled={item.pending}
-                    onClick={() => startEdit(item)}
-                  >
-                    Изменить
+              <div className="listing-card__actions">
+                {user && !item.pending && item.sellerId && item.sellerId !== user.id && (
+                  <button className="btn-chat" onClick={() => startChat(item)}>
+                    Написать продавцу
                   </button>
-                  <button
-                    className="btn-delete"
-                    disabled={item.pending}
-                    onClick={() => removeListing(item.id)}
-                  >
-                    Удалить
-                  </button>
-                </div>
-              )}
+                )}
+                {canManage(item) && (
+                  <>
+                    <button
+                      className="btn-edit"
+                      disabled={item.pending}
+                      onClick={() => startEdit(item)}
+                    >
+                      Изменить
+                    </button>
+                    <button
+                      className="btn-delete"
+                      disabled={item.pending}
+                      onClick={() => removeListing(item.id)}
+                    >
+                      Удалить
+                    </button>
+                  </>
+                )}
+              </div>
             </li>
           ))}
         </ul>
@@ -350,4 +360,4 @@ function ListingList() {
   );
 }
 
-export default ListingList;
+export default ListingList

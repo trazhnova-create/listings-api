@@ -67,12 +67,10 @@ async function withRetry(fn, attempts = 3, delay = 500) {
 export const registerRequest = (email, password) =>
   api.post('/auth/register', { email, password });
 
-
 export async function loginRequest(email, password) {
   const { data } = await api.post('/auth/login', { email, password });
   return data;
 }
-
 
 export async function fetchListings(params = {}, signal) {
   const { data, headers } = await withRetry(() =>
@@ -84,18 +82,15 @@ export async function fetchListings(params = {}, signal) {
   };
 }
 
-
 export async function addListing(listing) {
   const { data } = await api.post('/listings', listing);
   return normalize(data);
 }
 
-
 export async function updateListing(id, updated) {
   const { data } = await api.put(`/listings/${id}`, updated);
   return normalize(data);
 }
-
 
 export const deleteListing = (id) => api.delete(`/listings/${id}`);
 

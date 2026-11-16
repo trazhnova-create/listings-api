@@ -1,6 +1,6 @@
 require('dotenv').config();
 const dns = require('node:dns');
-dns.setServers(['1.1.1.1', '8.8.8.8']); // обход проблем с SRV/TXT-запросами у провайдера
+dns.setServers(['1.1.1.1', '8.8.8.8']); 
 const bcrypt = require('bcrypt');
 const mongoose = require('mongoose');
 const { Listing, User } = require('../models');

@@ -146,7 +146,6 @@ exports.updateListing = async (req, res, next) => {
     if (errors.length > 0) {
       return res.status(400).json({ error: errors.join('; ') });
     }
-
     const listing = await Listing.findById(req.params.id);
     if (!listing) {
       return res.status(404).json({ error: 'Listing not found' });
@@ -154,8 +153,6 @@ exports.updateListing = async (req, res, next) => {
     if (!listing.canBeModifiedBy(req.user)) {
       return res.status(403).json({ error: 'Нельзя изменять чужое объявление' });
     }
-
-    
     listing.set(pickAllowed(req.body));
     await listing.save();
     res.status(200).json(listing);

@@ -1,8 +1,10 @@
 require('dotenv').config();
+const http = require('http');
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const connectDB = require('./db');
+const { initSocket } = require('./sockets');
 const listingsRouter = require('./routes/listings');
 const authRouter = require('./routes/auth');
 const profileRouter = require('./routes/profile');
@@ -19,9 +21,7 @@ app.use(cors({
 
 app.use(express.json());
 
-
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
 
 if (process.env.DELAY_MS) {
   app.use((req, res, next) => setTimeout(next, Number(process.env.DELAY_MS)));
@@ -34,7 +34,7 @@ app.use((req, res, next) => {
 
 app.get('/', (req, res) => {
   res.status(200).json({
-    message: 'Listings API is running (MongoDB)',
+    message: 'Listings API is running (MongoDB + Socket.IO)',
     endpoints: {
       listings: '/listings',
       auth: '/auth',
@@ -55,10 +55,12 @@ app.use((req, res) => {
 
 app.use(errorHandler);
 
+const server = http.createServer(app);
+initSocket(server);
 
 connectDB()
   .then(() => {
-    app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+    server.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
   })
   .catch((err) => {
     console.error('MongoDB connection error:', err.message);
