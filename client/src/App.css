@@ -1218,7 +1218,7 @@
 
 @media (max-width: 480px) {
   .listing-card__actions {
-    flex-direction: column;
+    width: 100%;
   }
 
   .listing-form__buttons {
@@ -1493,9 +1493,15 @@
   cursor: pointer;
 }
 
-/* кнопки в карточке переносятся, если не помещаются */
+/* кнопки в карточке — по центру, переносятся если не лезут */
 .listing-card__actions {
   flex-wrap: wrap;
-  justify-content: flex-end;
-  max-width: 260px;
+  justify-content: center;
+  gap: 10px;
 }
+
+.listing-card__actions button {
+  flex: 0 1 auto;
+  min-width: 130px;
+}
+

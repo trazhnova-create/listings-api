@@ -26,7 +26,6 @@ export const CATEGORIES = [
 const PAGE_SIZE = 5; 
 const DEFAULT_PARAMS = { search: '', category: 'all', sort: 'new', minPrice: '', maxPrice: '' };
 
-
 function buildQuery(p) {
   const q = { sort: p.sort };
   if (p.search) q.search = p.search;
@@ -48,7 +47,6 @@ function ListingList() {
   const [reloadKey, setReloadKey] = useState(0);
   const [notice, setNotice] = useState(null);
 
-  
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [sortBy, setSortBy] = useState('new');
@@ -64,7 +62,6 @@ function ListingList() {
     paramsKeyRef.current = paramsKey;
   }, [paramsKey]);
 
-  
   useEffect(() => {
     const timer = setTimeout(() => {
       setParams({
@@ -78,7 +75,6 @@ function ListingList() {
     return () => clearTimeout(timer);
   }, [searchQuery, categoryFilter, sortBy, minPrice, maxPrice]);
 
-  
   useEffect(() => {
     const controller = new AbortController();
     setIsLoading(true);
@@ -102,10 +98,8 @@ function ListingList() {
     return () => controller.abort();
   }, [paramsKey, reloadKey]);
 
-  
   async function loadMore() {
     const keyAtStart = paramsKey;
-    
     const offset = listings.filter((item) => !item.pending).length;
 
     setIsLoadingMore(true);
@@ -123,7 +117,6 @@ function ListingList() {
     }
   }
 
-  
   useEffect(() => {
     if (!user) setEditingItem(null);
   }, [user]);
@@ -143,6 +136,10 @@ function ListingList() {
   }
 
   
+  function emitStats() {
+    window.dispatchEvent(new Event('listings:changed'));
+  }
+
   async function createNew(payload) {
     const tempId = Date.now();
     setListings((prev) => [{ ...payload, id: tempId, sellerId: user.id, pending: true }, ...prev]);
@@ -151,14 +148,15 @@ function ListingList() {
     try {
       const saved = await addListing(payload);
       setListings((prev) => prev.map((item) => (item.id === tempId ? saved : item)));
+      emitStats(); 
     } catch (err) {
       setListings((prev) => prev.filter((item) => item.id !== tempId));
       setTotal((t) => t - 1);
       notify(`Не удалось добавить объявление: ${getErrorMessage(err)}`);
+      emitStats(); 
     }
   }
 
-  
   async function editExisting(id, payload) {
     const previous = listings.find((item) => item.id === id);
     setListings((prev) =>
@@ -168,6 +166,7 @@ function ListingList() {
     try {
       const saved = await updateListing(id, payload);
       setListings((prev) => prev.map((item) => (item.id === id ? saved : item)));
+      emitStats(); 
     } catch (err) {
       setListings((prev) => prev.map((item) => (item.id === id ? previous : item)));
       notify(`Не удалось сохранить изменения: ${getErrorMessage(err)}`);
@@ -194,7 +193,6 @@ function ListingList() {
     return createNew(payload);
   }
 
-  
   async function removeListing(id) {
     const removed = listings.find((item) => item.id === id);
     setListings((prev) => prev.filter((item) => item.id !== id));
@@ -203,15 +201,16 @@ function ListingList() {
 
     try {
       await deleteListing(id);
+      emitStats(); 
     } catch (err) {
       if (err.response?.status === 404) return; 
       setListings((prev) => [removed, ...prev]);
       setTotal((t) => t + 1);
       notify(`Не удалось удалить объявление: ${getErrorMessage(err)}`);
+      emitStats(); 
     }
   }
 
-  
   const canManage = (item) =>
     !!user && (user.role === 'admin' || item.sellerId === user.id);
 
@@ -360,4 +359,4 @@ function ListingList() {
   );
 }
 
-export default ListingList
+export default ListingList;
