@@ -3,7 +3,7 @@ const http = require('http');
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
-const connectDB = require('./db');
+const db = require('./db');
 const { initSocket } = require('./sockets');
 const listingsRouter = require('./routes/listings');
 const authRouter = require('./routes/auth');
@@ -34,7 +34,8 @@ app.use((req, res, next) => {
 
 app.get('/', (req, res) => {
   res.status(200).json({
-    message: 'Listings API is running (MongoDB + Socket.IO)',
+    message: `Listings API is running (${db.type === 'postgres' ? 'PostgreSQL' : 'MongoDB'} + Socket.IO)`,
+database: db.type,
     endpoints: {
       listings: '/listings',
       auth: '/auth',
@@ -58,11 +59,11 @@ app.use(errorHandler);
 const server = http.createServer(app);
 initSocket(server);
 
-connectDB()
+db.connect()
   .then(() => {
     server.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
   })
   .catch((err) => {
-    console.error('MongoDB connection error:', err.message);
+    console.error(`Ошибка подключения к БД (${db.type}):`, err.message);
     process.exit(1);
   });

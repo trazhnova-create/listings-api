@@ -1,16 +1,14 @@
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
-const { Listing, User, Conversation, Message } = require('../models');
+const db = require('../db');
 
-const OBJECT_ID_RE = /^[0-9a-f]{24}$/i;
 const convRoom = (id) => `conv:${id}`;
-const userRoom = (id) => `user:${id}`; 
+const userRoom = (id) => `user:${id}`;
 const reply = (ack, data) => typeof ack === 'function' && ack(data);
-const plain = (doc) => JSON.parse(JSON.stringify(doc)); 
+const plain = (doc) => JSON.parse(JSON.stringify(doc));
 
 const isMember = (conv, userId) =>
   String(conv.sellerId) === userId || String(conv.buyerId) === userId;
-
 
 function toView(conv, userId) {
   const isSeller = String(conv.sellerId) === userId;
@@ -32,7 +30,6 @@ function initSocket(httpServer) {
     cors: { origin: process.env.CLIENT_URL || 'http://localhost:5173' },
   });
 
-  
   io.use((socket, next) => {
     const token = socket.handshake.auth?.token;
     if (!token) return next(new Error('Нужно войти в аккаунт'));
@@ -44,7 +41,6 @@ function initSocket(httpServer) {
     }
   });
 
-  
   async function getOnline(room) {
     const sockets = await io.in(room).fetchSockets();
     const byId = new Map();
@@ -52,7 +48,6 @@ function initSocket(httpServer) {
     return [...byId.values()];
   }
 
- 
   async function announceLeft(room, user) {
     const users = await getOnline(room);
     if (!users.some((u) => u.id === user.id)) {
@@ -67,14 +62,9 @@ function initSocket(httpServer) {
     socket.join(userRoom(user.id));
     let joined = [];
 
-    
     socket.on('conversations:list', async (ack) => {
       try {
-        const convs = await Conversation.find({
-          $or: [{ sellerId: user.id, lastAt: { $ne: null } }, { buyerId: user.id }],
-        })
-          .sort({ updatedAt: -1 })
-          .limit(100);
+        const convs = await db.conversations.listForUser(user.id);
         reply(ack, { ok: true, conversations: convs.map((c) => toView(c, user.id)) });
       } catch (err) {
         console.error('conversations:list', err);
@@ -82,38 +72,30 @@ function initSocket(httpServer) {
       }
     });
 
-    
     socket.on('conversation:start', async (listingId, ack) => {
       try {
-        if (!OBJECT_ID_RE.test(listingId)) {
+        if (!db.isValidId(listingId)) {
           return reply(ack, { ok: false, error: 'Некорректный id объявления' });
         }
-        const listing = await Listing.findById(listingId).select('title sellerId');
+        const listing = await db.listings.findById(listingId);
         if (!listing) return reply(ack, { ok: false, error: 'Объявление не найдено' });
         if (!listing.sellerId) return reply(ack, { ok: false, error: 'У объявления нет владельца' });
         if (String(listing.sellerId) === user.id) {
           return reply(ack, { ok: false, error: 'Это ваше объявление. Диалоги с покупателями в разделе «Сообщения»' });
         }
-        const seller = await User.findById(listing.sellerId).select('email');
+        const seller = await db.users.findById(listing.sellerId);
         if (!seller) return reply(ack, { ok: false, error: 'Продавец не найден' });
 
-        let conv = await Conversation.findOne({ listingId, buyerId: user.id });
-        if (!conv) {
-          try {
-            conv = await Conversation.create({
-              listingId,
-              listingTitle: listing.title,
-              sellerId: listing.sellerId,
-              sellerEmail: seller.email,
-              buyerId: user.id,
-              buyerEmail: user.email,
-            });
-          } catch (err) {
-            if (err.code !== 11000) throw err;
-            
-            conv = await Conversation.findOne({ listingId, buyerId: user.id });
+        // находит диалог по (объявление, покупатель) или создаёт новый
+        const conv = await db.conversations.findOrCreate(
+          { listingId, buyerId: user.id },
+          {
+            listingTitle: listing.title,
+            sellerId: listing.sellerId,
+            sellerEmail: seller.email,
+            buyerEmail: user.email,
           }
-        }
+        );
         reply(ack, { ok: true, conversation: toView(conv, user.id) });
       } catch (err) {
         console.error('conversation:start', err);
@@ -121,13 +103,12 @@ function initSocket(httpServer) {
       }
     });
 
-    
     socket.on('conversation:join', async (conversationId, ack) => {
       try {
-        if (!OBJECT_ID_RE.test(conversationId)) {
+        if (!db.isValidId(conversationId)) {
           return reply(ack, { ok: false, error: 'Некорректный id диалога' });
         }
-        const conv = await Conversation.findById(conversationId);
+        const conv = await db.conversations.findById(conversationId);
         if (!conv || !isMember(conv, user.id)) {
           return reply(ack, { ok: false, error: 'Диалог не найден' });
         }
@@ -136,13 +117,12 @@ function initSocket(httpServer) {
         const wasHere = (await getOnline(room)).some((u) => u.id === user.id);
         await socket.join(room);
 
-        
-        const field = String(conv.sellerId) === user.id ? 'unreadSeller' : 'unreadBuyer';
-        await Conversation.updateOne({ _id: conv._id }, { [field]: 0 }, { timestamps: false });
-        conv[field] = 0;
+        const isSellerHere = String(conv.sellerId) === user.id;
+        await db.conversations.resetUnread(conv.id, isSellerHere ? 'seller' : 'buyer');
+        conv[isSellerHere ? 'unreadSeller' : 'unreadBuyer'] = 0;
 
         const [history, users] = await Promise.all([
-          Message.find({ conversationId }).sort({ createdAt: -1 }).limit(50),
+          db.messages.history(conversationId, 50),
           getOnline(room),
         ]);
 
@@ -150,14 +130,14 @@ function initSocket(httpServer) {
           socket.to(room).emit('system', { text: `${user.email} присоединился к чату`, at: Date.now() });
         }
         io.to(room).emit('room:users', users);
-        
+
         io.to(userRoom(user.id)).emit('conversation:updated', toView(conv, user.id));
 
         reply(ack, {
           ok: true,
           conversation: toView(conv, user.id),
           users,
-          history: plain(history.reverse()),
+          history: plain(history),
         });
       } catch (err) {
         console.error('conversation:join', err);
@@ -167,9 +147,9 @@ function initSocket(httpServer) {
 
     socket.on('conversation:leave', async (conversationId, ack) => {
       try {
-        if (!OBJECT_ID_RE.test(conversationId)) return reply(ack, { ok: false });
+        if (!db.isValidId(conversationId)) return reply(ack, { ok: false });
         const room = convRoom(conversationId);
-        if (!socket.rooms.has(room)) return reply(ack, { ok: true }); 
+        if (!socket.rooms.has(room)) return reply(ack, { ok: true });
         await socket.leave(room);
         await announceLeft(room, user);
         reply(ack, { ok: true });
@@ -179,11 +159,10 @@ function initSocket(httpServer) {
       }
     });
 
-    
     socket.on('message:send', async (payload, ack) => {
       try {
         const { conversationId, text } = payload || {};
-        const room = OBJECT_ID_RE.test(conversationId) ? convRoom(conversationId) : null;
+        const room = db.isValidId(conversationId) ? convRoom(conversationId) : null;
         if (!room || !socket.rooms.has(room)) {
           return reply(ack, { ok: false, error: 'Сначала откройте диалог' });
         }
@@ -191,12 +170,12 @@ function initSocket(httpServer) {
         if (!clean) return reply(ack, { ok: false, error: 'Пустое сообщение' });
         if (clean.length > 1000) return reply(ack, { ok: false, error: 'Не длиннее 1000 символов' });
 
-        const conv = await Conversation.findById(conversationId);
+        const conv = await db.conversations.findById(conversationId);
         if (!conv || !isMember(conv, user.id)) {
           return reply(ack, { ok: false, error: 'Диалог не найден' });
         }
 
-        const message = await Message.create({
+        const message = await db.messages.create({
           conversationId,
           userId: user.id,
           author: user.email,
@@ -207,9 +186,12 @@ function initSocket(httpServer) {
         const otherId = String(isSeller ? conv.buyerId : conv.sellerId);
         const otherInRoom = (await getOnline(room)).some((u) => u.id === otherId);
 
-        const update = { $set: { lastText: clean.slice(0, 100), lastAt: message.createdAt } };
-                if (!otherInRoom) update.$inc = { [isSeller ? 'unreadBuyer' : 'unreadSeller']: 1 };
-        const updated = await Conversation.findByIdAndUpdate(conversationId, update, { new: true });
+        // если собеседника нет в комнате, ему добавляется непрочитанное сообщение
+        const updated = await db.conversations.touch(conversationId, {
+          text: clean.slice(0, 100),
+          at: message.createdAt,
+          unreadFor: otherInRoom ? null : isSeller ? 'buyer' : 'seller',
+        });
 
         io.to(room).emit('message:new', plain(message));
         for (const id of [String(updated.sellerId), String(updated.buyerId)]) {
@@ -230,16 +212,14 @@ function initSocket(httpServer) {
       }
     });
 
-    
     socket.on('typing', (payload) => {
       const { conversationId, isTyping } = payload || {};
-      if (!OBJECT_ID_RE.test(conversationId)) return;
+      if (!db.isValidId(conversationId)) return;
       const room = convRoom(conversationId);
       if (!socket.rooms.has(room)) return;
       socket.to(room).emit('typing', { userId: user.id, email: user.email, isTyping: !!isTyping });
     });
 
-    
     socket.on('disconnecting', () => {
       joined = [...socket.rooms].filter((r) => r.startsWith('conv:'));
     });

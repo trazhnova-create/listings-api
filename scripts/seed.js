@@ -1,44 +1,43 @@
 require('dotenv').config();
-const dns = require('node:dns');
-dns.setServers(['1.1.1.1', '8.8.8.8']); 
 const bcrypt = require('bcrypt');
-const mongoose = require('mongoose');
-const { Listing, User } = require('../models');
+const db = require('../db');
 
 async function seed() {
-  await mongoose.connect(process.env.MONGO_URI);
-  await Promise.all([Listing.deleteMany({}), User.deleteMany({})]);
+  await db.connect();
+  console.log(`Заполняю БД: ${db.type}`);
 
-  const admin = await User.create({
+  
+  await db.messages.removeAll();
+  await db.conversations.removeAll();
+  await db.listings.removeAll();
+  await db.users.removeAll();
+
+  const admin = await db.users.create({
     email: 'admin@listings.local',
     passwordHash: await bcrypt.hash('Admin12345!', 10),
     role: 'admin',
   });
-  const seller = await User.create({
+  const seller = await db.users.create({
     email: 'seller@test.com',
     passwordHash: await bcrypt.hash('MyPass123', 10),
   });
 
-  await Listing.create([
+  const [iphone] = await db.listings.createMany([
     {
       title: 'iPhone 12, 128GB',
       description: 'Небольшие царапины на корпусе, всё работает исправно.',
       category: 'Электроника',
       price: 25000,
-      sellerId: admin._id,
+      sellerId: admin.id,
       tags: ['телефон', 'apple'],
       location: { city: 'Минск', district: 'Центральный' },
-      comments: [
-        { userId: seller._id, author: seller.email, text: 'Торг уместен?', likes: 2 },
-        { userId: admin._id, author: admin.email, text: 'Немного уступлю', likes: 0 },
-      ],
     },
     {
       title: 'Зимняя куртка The North Face, размер L',
       description: 'Носилась один сезон, состояние отличное.',
       category: 'Одежда',
       price: 3500,
-      sellerId: seller._id,
+      sellerId: seller.id,
       tags: ['куртка', 'зима'],
       location: { city: 'Гомель', district: '' },
     },
@@ -47,7 +46,7 @@ async function seed() {
       description: 'Обмен на письменный стол.',
       category: 'Мебель',
       price: 0,
-      sellerId: seller._id,
+      sellerId: seller.id,
       tags: ['шкаф', 'ikea'],
       location: { city: 'Минск', district: 'Заводской' },
     },
@@ -57,17 +56,32 @@ async function seed() {
       category: 'Электроника',
       price: 15000,
       status: 'reserved',
-      sellerId: admin._id,
+      sellerId: admin.id,
       tags: ['приставка', 'игры'],
       location: { city: 'Брест', district: '' },
     },
   ]);
 
+  
+  const c1 = await db.listings.addComment(iphone.id, {
+    userId: seller.id,
+    author: seller.email,
+    text: 'Торг уместен?',
+  });
+  await db.listings.likeComment(iphone.id, c1.id);
+  await db.listings.likeComment(iphone.id, c1.id);
+  await db.listings.addComment(iphone.id, {
+    userId: admin.id,
+    author: admin.email,
+    text: 'Немного уступлю',
+  });
+
   console.log('Seed выполнен: 2 пользователя, 4 объявления');
-  await mongoose.disconnect();
 }
 
-seed().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+seed()
+  .then(() => process.exit(0))
+  .catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });

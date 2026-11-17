@@ -1,9 +1,11 @@
-const { User } = require('../models');
+const db = require('../db');
 
 exports.listUsers = async (req, res, next) => {
   try {
-    const users = await User.find().sort({ createdAt: 1 });
-    res.status(200).json(users.map((u) => u.toSafeObject()));
+    const users = await db.users.list();
+    res.status(200).json(
+      users.map(({ id, email, role, createdAt }) => ({ id, email, role, createdAt }))
+    );
   } catch (err) {
     next(err);
   }

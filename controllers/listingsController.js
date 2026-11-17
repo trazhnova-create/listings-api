@@ -1,37 +1,45 @@
-
-const { Listing } = require('../models');
+const db = require('../db');
 
 
 const ALLOWED_FIELDS = [
   'title', 'description', 'category', 'price',
   'condition', 'status', 'image', 'tags', 'location',
 ];
+const CONDITIONS = ['new', 'used', 'for_parts'];
+const STATUSES = ['available', 'reserved', 'sold'];
+const MAX_PRICE = 99_999_999; 
 
 const pickAllowed = (body) =>
   Object.fromEntries(Object.entries(body).filter(([key]) => ALLOWED_FIELDS.includes(key)));
 
 
-const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const canModify = (listing, user) =>
+  user.role === 'admin' || String(listing.sellerId) === String(user.id);
 
 function validateListingInput(data, { partial = false } = {}) {
   const errors = [];
+  const isText = (v) => typeof v === 'string' && v.trim() !== '';
 
   if (!partial || data.title !== undefined) {
-    if (!data.title || typeof data.title !== 'string' || !data.title.trim()) {
-      errors.push('Поле "title" обязательно и должно быть непустой строкой');
-    }
+    if (!isText(data.title)) errors.push('Поле "title" обязательно и должно быть непустой строкой');
   }
 
   if (!partial || data.category !== undefined) {
-    if (!data.category || typeof data.category !== 'string' || !data.category.trim()) {
-      errors.push('Поле "category" обязательно и должно быть непустой строкой');
-    }
+    if (!isText(data.category)) errors.push('Поле "category" обязательно и должно быть непустой строкой');
   }
 
   if (data.price !== undefined) {
-    if (typeof data.price !== 'number' || Number.isNaN(data.price) || data.price < 0) {
-      errors.push('Поле "price" должно быть числом >= 0');
+    if (typeof data.price !== 'number' || Number.isNaN(data.price) || data.price < 0 || data.price > MAX_PRICE) {
+      errors.push(`Поле "price" должно быть числом от 0 до ${MAX_PRICE}`);
     }
+  }
+
+  if (data.condition !== undefined && !CONDITIONS.includes(data.condition)) {
+    errors.push(`Поле "condition" должно быть одним из: ${CONDITIONS.join(', ')}`);
+  }
+
+  if (data.status !== undefined && !STATUSES.includes(data.status)) {
+    errors.push(`Поле "status" должно быть одним из: ${STATUSES.join(', ')}`);
   }
 
   if (data.tags !== undefined) {
@@ -40,19 +48,21 @@ function validateListingInput(data, { partial = false } = {}) {
     }
   }
 
+  if (data.location !== undefined) {
+    const loc = data.location;
+    const ok =
+      loc && typeof loc === 'object' && !Array.isArray(loc) &&
+      Object.values(loc).every((v) => typeof v === 'string');
+    if (!ok) errors.push('Поле "location" должно быть объектом со строковыми значениями (city, district)');
+  }
+
   return errors;
 }
 
 
 function handleDbError(err, res, next) {
-  if (err.name === 'ValidationError') {
-    return res
-      .status(400)
-      .json({ error: Object.values(err.errors).map((e) => e.message).join('; ') });
-  }
-  if (err.name === 'CastError') {
-    return res.status(400).json({ error: `Некорректное значение поля "${err.path}"` });
-  }
+  const normalized = db.normalizeError(err);
+  if (normalized) return res.status(normalized.status).json({ error: normalized.message });
   return next(err);
 }
 
@@ -61,47 +71,27 @@ function handleDbError(err, res, next) {
 exports.getAllListings = async (req, res, next) => {
   try {
     const { category, status, dealType, search, tag, city, minPrice, maxPrice, sort } = req.query;
-    const filter = {};
-    if (category) filter.category = category;
-    if (status) filter.status = status;
-    if (dealType) filter.dealType = dealType;
+    const text = (v) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
+    const num = (v) => (v !== undefined && v !== '' && Number.isFinite(Number(v)) ? Number(v) : undefined);
 
-    
-    if (tag) filter.tags = tag;
-
-    
-    if (city) filter['location.city'] = city;
-
-    
-    if (search && search.trim()) {
-      filter.title = { $regex: escapeRegex(search.trim()), $options: 'i' };
-    }
-
-   
-    const min = Number(minPrice);
-    const max = Number(maxPrice);
-    if (minPrice && Number.isFinite(min)) filter.price = { ...filter.price, $gte: min };
-    if (maxPrice && Number.isFinite(max)) filter.price = { ...filter.price, $lte: max };
-
-    const sorts = {
-      new: { createdAt: -1, _id: -1 },
-      old: { createdAt: 1, _id: 1 },
-      priceAsc: { price: 1, _id: -1 },
-      priceDesc: { price: -1, _id: -1 },
-    };
-
-    
-    let query = Listing.find(filter).sort(sorts[sort] || sorts.new);
-
-    
     const limit = Number(req.query.limit);
-    if (limit > 0) {
-      query = query.skip(Number(req.query.offset) || 0).limit(Math.min(limit, 50));
-    }
+    const offset = Number(req.query.offset);
 
-    const [rows, total] = await Promise.all([query.exec(), Listing.countDocuments(filter)]);
+    const { rows, total } = await db.listings.findMany({
+      category: text(category),
+      status: text(status),
+      dealType: text(dealType),
+      tag: text(tag),
+      city: text(city),
+      search: text(search),
+      minPrice: num(minPrice),
+      maxPrice: num(maxPrice),
+      sort: typeof sort === 'string' ? sort : 'new',
+      limit: limit > 0 ? Math.min(limit, 50) : 0,
+      offset: offset > 0 ? offset : 0,
+    });
 
-    res.set('X-Total-Count', String(total)); // сколько всего подходит под фильтры
+    res.set('X-Total-Count', String(total)); 
     res.status(200).json(rows);
   } catch (err) {
     next(err);
@@ -111,11 +101,7 @@ exports.getAllListings = async (req, res, next) => {
 exports.getListingById = async (req, res, next) => {
   try {
     
-    const listing = await Listing.findByIdAndUpdate(
-      req.params.id,
-      { $inc: { viewsCount: 1 } },
-      { new: true }
-    );
+    const listing = await db.listings.viewById(req.params.id);
     if (!listing) {
       return res.status(404).json({ error: 'Listing not found' });
     }
@@ -133,7 +119,7 @@ exports.createListing = async (req, res, next) => {
     }
 
     
-    const listing = await Listing.create({ ...pickAllowed(req.body), sellerId: req.user.id });
+    const listing = await db.listings.create({ ...pickAllowed(req.body), sellerId: req.user.id });
     res.status(201).json(listing);
   } catch (err) {
     handleDbError(err, res, next);
@@ -146,15 +132,19 @@ exports.updateListing = async (req, res, next) => {
     if (errors.length > 0) {
       return res.status(400).json({ error: errors.join('; ') });
     }
-    const listing = await Listing.findById(req.params.id);
+
+    const existing = await db.listings.findById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Listing not found' });
+    }
+    if (!canModify(existing, req.user)) {
+      return res.status(403).json({ error: 'Нельзя изменять чужое объявление' });
+    }
+
+    const listing = await db.listings.update(req.params.id, pickAllowed(req.body));
     if (!listing) {
       return res.status(404).json({ error: 'Listing not found' });
     }
-    if (!listing.canBeModifiedBy(req.user)) {
-      return res.status(403).json({ error: 'Нельзя изменять чужое объявление' });
-    }
-    listing.set(pickAllowed(req.body));
-    await listing.save();
     res.status(200).json(listing);
   } catch (err) {
     handleDbError(err, res, next);
@@ -163,16 +153,15 @@ exports.updateListing = async (req, res, next) => {
 
 exports.deleteListing = async (req, res, next) => {
   try {
-    const listing = await Listing.findById(req.params.id);
-    if (!listing) {
+    const existing = await db.listings.findById(req.params.id);
+    if (!existing) {
       return res.status(404).json({ error: 'Listing not found' });
     }
-    if (!listing.canBeModifiedBy(req.user)) {
+    if (!canModify(existing, req.user)) {
       return res.status(403).json({ error: 'Нельзя удалять чужое объявление' });
     }
 
-    
-    const deleted = await Listing.findByIdAndDelete(req.params.id);
+    const deleted = await db.listings.remove(req.params.id);
     res.status(200).json({ message: 'Listing deleted successfully', listing: deleted });
   } catch (err) {
     next(err);
@@ -186,35 +175,32 @@ exports.addComment = async (req, res, next) => {
     if (!text) {
       return res.status(400).json({ error: 'Текст комментария обязателен' });
     }
+    if (text.length > 500) {
+      return res.status(400).json({ error: 'Комментарий не длиннее 500 символов' });
+    }
 
-    const listing = await Listing.findByIdAndUpdate(
-      req.params.id,
-      { $push: { comments: { userId: req.user.id, author: req.user.email, text } } },
-      { new: true, runValidators: true }
-    );
-    if (!listing) {
+    const comment = await db.listings.addComment(req.params.id, {
+      userId: req.user.id,
+      author: req.user.email,
+      text,
+    });
+    if (!comment) {
       return res.status(404).json({ error: 'Listing not found' });
     }
 
-    res.status(201).json(listing.comments[listing.comments.length - 1]);
+    res.status(201).json(comment);
   } catch (err) {
     handleDbError(err, res, next);
   }
 };
 
-
 exports.likeComment = async (req, res, next) => {
   try {
-    const listing = await Listing.findOneAndUpdate(
-      { _id: req.params.id, 'comments._id': req.params.commentId },
-      { $inc: { 'comments.$.likes': 1 } },
-      { new: true }
-    );
-    if (!listing) {
+    const comment = await db.listings.likeComment(req.params.id, req.params.commentId);
+    if (!comment) {
       return res.status(404).json({ error: 'Объявление или комментарий не найдены' });
     }
-
-    res.status(200).json(listing.comments.id(req.params.commentId));
+    res.status(200).json(comment);
   } catch (err) {
     next(err);
   }
@@ -223,12 +209,12 @@ exports.likeComment = async (req, res, next) => {
 
 exports.deleteComment = async (req, res, next) => {
   try {
-    const listing = await Listing.findById(req.params.id);
+    const listing = await db.listings.findById(req.params.id);
     if (!listing) {
       return res.status(404).json({ error: 'Listing not found' });
     }
 
-    const comment = listing.comments.id(req.params.commentId);
+    const comment = listing.comments.find((c) => c.id === req.params.commentId);
     if (!comment) {
       return res.status(404).json({ error: 'Комментарий не найден' });
     }
@@ -238,7 +224,7 @@ exports.deleteComment = async (req, res, next) => {
       return res.status(403).json({ error: 'Нельзя удалять чужой комментарий' });
     }
 
-    await Listing.updateOne({ _id: listing._id }, { $pull: { comments: { _id: comment._id } } });
+    await db.listings.removeComment(req.params.id, req.params.commentId);
     res.status(200).json({ message: 'Comment deleted successfully' });
   } catch (err) {
     next(err);

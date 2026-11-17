@@ -5,17 +5,21 @@ const fs = require('fs');
 const router = express.Router();
 const listingsController = require('../controllers/listingsController');
 const authenticate = require('../middleware/auth');
+const db = require('../db');
 
 
-const OBJECT_ID_RE = /^[0-9a-f]{24}$/i;
-function validateObjectId(req, res, next, value) {
-  if (!OBJECT_ID_RE.test(value)) {
+function validateId(req, res, next, value) {
+  if (!db.isValidId(value)) {
     return res.status(400).json({ error: 'Некорректный идентификатор' });
   }
   next();
 }
-router.param('id', validateObjectId);
-router.param('commentId', validateObjectId);
+router.param('id', validateId);
+router.param('commentId', (req, res, next, value) => {
+  const ok = db.type === 'postgres' ? /^[0-9a-f-]{36}$/i.test(value) : db.isValidId(value);
+  if (!ok) return res.status(400).json({ error: 'Некорректный идентификатор' });
+  next();
+});
 
 
 const uploadDir = path.join(__dirname, '..', 'uploads');

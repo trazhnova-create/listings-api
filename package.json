@@ -4,11 +4,15 @@
   "description": "",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "seed": "node scripts/seed.js",
-    "dev": "nodemon server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
+  "start": "node server.js",
+  "start:mongo": "DB_TYPE=mongo node server.js",
+  "start:postgres": "DB_TYPE=postgres node server.js",
+  "seed": "node scripts/seed.js",
+  "seed:mongo": "DB_TYPE=mongo node scripts/seed.js",
+  "seed:postgres": "DB_TYPE=postgres node scripts/seed.js",
+  "dev": "nodemon server.js",
+  "test": "echo \"Error: no test specified\" && exit 1"
+},
   "keywords": [],
   "author": "",
   "license": "ISC",
@@ -20,6 +24,9 @@
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.11.4",
     "multer": "^2.5.0",
+    "pg": "^8.23.1",
+    "pg-hstore": "^2.3.4",
+    "sequelize": "^6.37.8",
     "socket.io": "^4.8.4"
   },
   "devDependencies": {
