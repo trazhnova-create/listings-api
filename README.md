@@ -1,149 +1,131 @@
-# Listings API — Лабораторная работа №6 (MongoDB + Mongoose)
+# Лабораторная работа №7. Реализация чата в реальном времени (Socket.IO)
 
-REST API для платформы продажи и обмена подержанными вещами. Это альтернативная реализация сервера из ЛР №1–5: реляционная БД PostgreSQL (Sequelize) заменена на документную **MongoDB** (ODM **Mongoose**). Внешний контракт API сохранён, поэтому React-клиент из ЛР №5 работает без изменений.
+REST API и клиентское приложение для платформы продажи и обмена подержанными вещами («Барахолка»).
+В данной лабораторной работе к существующему функционалу (CRUD объявлений, авторизация, загрузка фото)
+добавлен **модуль обмена сообщениями в реальном времени** с сохранением истории в базе данных.
+Проект поддерживает **две базы данных на выбор: MongoDB или PostgreSQL**.
 
-Ветка репозитория: `lab26`
+Ветка репозитория: `lab27`
 
-## Стек
+## 🛠 Стек технологий
 
-Node.js, Express.js, MongoDB Atlas (кластер M0), Mongoose, JWT (jsonwebtoken), bcrypt, cors, multer, dotenv.
+**Backend:**
+- Node.js, Express.js
+- Socket.IO (WebSocket-сервер)
+- MongoDB Atlas + Mongoose **или** PostgreSQL + Sequelize (выбор через `DB_TYPE`)
+- JWT (jsonwebtoken), bcrypt, multer (загрузка фото)
 
-## Модель данных (документная)
+**Frontend:**
+- React 19 (функциональные компоненты, хуки)
+- Vite
+- Socket.IO-client
+- Context API (`AuthContext`, `ChatContext`)
+- CSS (BEM-методология, адаптивная вёрстка)
 
-### Коллекция `listings`
+## ✨ Новый функционал (Лабораторная №7)
 
-| Поле | Тип | Описание |
+1. **Система диалогов (rooms).** При нажатии «Написать продавцу» создаётся уникальная комната (conversation),
+   привязанная к конкретному объявлению и двум пользователям. Повторное нажатие открывает уже существующий диалог.
+2. **Список входящих (Inbox).** Отдельное модальное окно со списком всех диалогов, отсортированных по времени
+   последнего сообщения, и **бейдж непрочитанных сообщений** в шапке сайта.
+3. **Индикаторы состояния:**
+   - статус «в сети» / «не в сети» (presence);
+   - индикатор «печатает...» (typing) с debounce-задержкой.
+4. **История сообщений.** Все сообщения сохраняются в базе данных и подгружаются при входе в диалог (последние 50).
+5. **Toast-уведомления.** Всплывающее уведомление о новом сообщении, если диалог в данный момент не открыт.
+6. **Защита соединения.** Сокет принимает только пользователей с действительным JWT-токеном; войти в диалог
+   и писать в него могут только двое его участников.
+7. **Две базы данных на выбор.** Весь код работает через единый слой `db/`, поэтому приложение запускается
+   и на MongoDB, и на PostgreSQL без изменений в контроллерах и сокетах.
+
+## 🔌 События Socket.IO
+
+| Событие | Направление | Назначение |
 |---|---|---|
-| `_id` | ObjectId | Идентификатор (в API отдаётся как строка `id`) |
-| `title` | String | Название (обязательное) |
-| `description` | String | Описание |
-| `category` | String | Категория (обязательное) |
-| `price` | Number | Цена; 0 означает обмен |
-| `dealType` | String | `sale` / `exchange`, вычисляется автоматически из цены |
-| `condition` | String | `new` / `used` / `for_parts` |
-| `status` | String | `available` / `reserved` / `sold` |
-| `image` | String | Ссылка на фото |
-| `viewsCount` | Number | Счётчик просмотров |
-| `sellerId` | ObjectId → `users` | Владелец объявления |
-| `tags` | **[String]** | **Массив** тегов |
-| `location` | **{ city, district }** | **Вложенный объект** |
-| `comments` | **[ { userId, author, text, likes, createdAt } ]** | **Массив вложенных документов** |
-| `createdAt` / `updatedAt` | Date | Заполняются автоматически |
+| `conversations:list` | клиент → сервер | получить список диалогов пользователя |
+| `conversation:start` | клиент → сервер | создать диалог по объявлению (или вернуть существующий) |
+| `conversation:join` | клиент → сервер | войти в комнату диалога, получить историю, обнулить непрочитанные |
+| `conversation:leave` | клиент → сервер | выйти из комнаты |
+| `message:send` | клиент → сервер | отправить сообщение (до 1000 символов) |
+| `typing` | клиент → сервер | индикатор «печатает...» |
+| `message:new` | сервер → клиент | новое сообщение в комнате |
+| `room:users` | сервер → клиент | кто сейчас в комнате (presence) |
+| `conversation:updated` | сервер → клиент | обновление строки диалога в списке |
+| `notify` | сервер → клиент | уведомление о сообщении, если диалог не открыт |
+| `system` | сервер → клиент | служебные сообщения («вошёл в чат», «покинул чат») |
 
-### Коллекция `users`
+## 🗄 Выбор базы данных
 
-`email` (уникальный индекс), `passwordHash` (bcrypt), `role` (`user` / `admin`), `createdAt`, `updatedAt`.
+База выбирается переменной окружения `DB_TYPE`:
 
-### Чем это отличается от PostgreSQL
-
-В реляционной схеме комментарии и теги пришлось бы выносить в отдельные таблицы (`Comments`, `Tags`, связующая `ListingTags`) и собирать через `JOIN`. В MongoDB объявление вместе с комментариями, тегами и адресом хранится одним документом, который читается одним запросом. Платой за это становятся дублирование данных и сложность запросов, которые охватывают много документов.
-
-## Установка и запуск
-
-### 1. MongoDB Atlas
-1. Зарегистрироваться на cloud.mongodb.com, создать бесплатный кластер M0.
-2. Создать пользователя базы данных, сохранить пароль.
-3. В Network Access добавить свой IP.
-4. Connect → Drivers → скопировать строку подключения и дописать имя базы `listings_db`.
-
-> Если `mongodb+srv://` не подключается (ошибка `queryTxt ETIMEOUT`), смените DNS на `1.1.1.1` / `8.8.8.8` или используйте строку подключения без `+srv`.
-
-### 2. Зависимости
-```bash
-npm install
-```
-
-### 3. Файл `.env` в корне
-```env
-MONGO_URI=mongodb+srv://ЛОГИН:ПАРОЛЬ@cluster0.xxxxx.mongodb.net/listings_db?retryWrites=true&w=majority&appName=Cluster0
-JWT_SECRET=длинная-случайная-строка-минимум-32-символа
-```
-Сгенерировать секрет:
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-`.env` не входит в систему контроля версий.
-
-### 4. Тестовые данные (один раз)
-```bash
-npm run seed
-```
-Скрипт очищает коллекции и создаёт 2 пользователей и 4 объявления.
-- администратор: `admin@listings.local` / `Admin12345!`
-- пользователь: `seller@test.com` / `MyPass123`
-
-### 5. Запуск
-```bash
-npm run dev
-```
-Сервер: `http://localhost:3000`. Клиент (папка `client`) запускается отдельно командой `npm run dev` в ней.
-
-## Маршруты API
-
-### Объявления
-
-| Метод | Путь | Описание | Доступ | Статусы |
-|---|---|---|---|---|
-| GET | `/listings` | Список. Параметры: `search`, `category`, `tag`, `city`, `minPrice`, `maxPrice`, `sort`, `limit`, `offset`. Общее число в заголовке `X-Total-Count` | все | 200 |
-| GET | `/listings/:id` | Одно объявление (счётчик просмотров +1 через `$inc`) | все | 200, 400, 404 |
-| POST | `/listings` | Создать (владелец берётся из токена) | токен | 201, 400, 401 |
-| PUT | `/listings/:id` | Изменить | владелец / админ | 200, 400, 401, 403, 404 |
-| DELETE | `/listings/:id` | Удалить, в ответе удалённый документ | владелец / админ | 200, 401, 403, 404 |
-| POST | `/listings/upload` | Загрузить фото (`multipart/form-data`, поле `image`) | токен | 201, 400, 401 |
-
-### Вложенные документы (комментарии)
-
-| Метод | Путь | Описание | Оператор MongoDB |
+| `DB_TYPE` | База | Библиотека | Строка подключения |
 |---|---|---|---|
-| POST | `/listings/:id/comments` | Добавить комментарий | `$push` |
-| POST | `/listings/:id/comments/:commentId/like` | Поставить лайк комментарию (обновление элемента внутри массива) | `$inc` + позиционный `$` |
-| DELETE | `/listings/:id/comments/:commentId` | Удалить комментарий (автор или админ) | `$pull` |
+| `mongo` (по умолчанию) | MongoDB | Mongoose | `MONGO_URI` |
+| `postgres` | PostgreSQL | Sequelize | `DATABASE_URL` |
 
-### Аутентификация
+Реализации лежат в `db/mongo/` и `db/postgres/`, у них одинаковый набор функций
+(`users`, `listings`, `conversations`, `messages`) и одинаковая форма возвращаемых объектов (id всегда строка).
 
-| Метод | Путь | Описание | Доступ |
-|---|---|---|---|
-| POST | `/auth/register` | Регистрация | все |
-| POST | `/auth/login` | Вход, выдача JWT | все |
-| GET | `/profile` | Текущий пользователь | токен |
-| GET | `/admin/users` | Список пользователей | токен + роль `admin` |
+## 🚀 Запуск
 
-Токен передаётся заголовком `Authorization: Bearer <token>`. Идентификаторы `:id` и `:commentId` — это ObjectId (24 hex-символа), при неверном формате сервер возвращает 400.
+1. Установите зависимости:
 
-## Использованные возможности Mongoose
+   ```bash
+   npm install
+   cd client && npm install && cd ..
+   ```
 
-- схемы и модели, вложенный документ (`commentSchema`), массивы, вложенный объект;
-- валидация (`required`, `enum`, `min`, `maxlength`, `match`) и хук `pre('validate')` для пересчёта `dealType`;
-- метод экземпляра `canBeModifiedBy`;
-- индексы: уникальный по `users.email`, составной `{category, price}`, по `tags`;
-- цепочки запросов `find().sort().skip().limit()`, `countDocuments`;
-- `findByIdAndUpdate`, `findOneAndUpdate`, `findByIdAndDelete`, `updateOne`;
-- `toJSON`-преобразование (`_id` → `id`).
+2. Создайте файл `.env` в корне проекта:
 
-## Структура проекта
+   ```env
+   DB_TYPE=postgres
+   # DB_TYPE=mongo
+   DATABASE_URL=postgres://user:password@localhost:5432/listings_db
+   MONGO_URI=mongodb+srv://user:password@cluster.mongodb.net/listings_db
+   JWT_SECRET=любая_длинная_случайная_строка
+   ```
 
-```
+   Активной должна быть одна строка `DB_TYPE`.
+
+3. Заполните выбранную базу тестовыми данными:
+
+   ```bash
+   npm run seed:postgres     # или npm run seed:mongo
+   ```
+
+4. Запустите backend и frontend:
+
+   ```bash
+   npm run start:postgres    # или npm run start:mongo  (http://localhost:3000)
+   cd client && npm run dev  # http://localhost:5173
+   ```
+
+Тестовые аккаунты: `admin@listings.local` / `Admin12345!` и `seller@test.com` / `MyPass123`.
+Для проверки чата откройте приложение в двух браузерах (или в обычном окне и в режиме инкогнито)
+под разными пользователями.
+
+## 📂 Структура проекта
+
+```text
 listings-api/
-├── client/                    # React-клиент (ЛР №5), без изменений
-├── controllers/
-│   ├── listingsController.js
-│   ├── authController.js
-│   └── adminController.js
-├── middleware/                # auth, isAdmin, errorHandler
-├── models/
-│   ├── index.js
-│   ├── listing.js
-│   └── user.js
-├── routes/
-├── scripts/
-│   └── seed.js                # тестовые данные
-├── uploads/                   # загруженные фото (не в git)
-├── db.js                      # подключение к MongoDB
-├── server.js
-├── .env
-└── README.md
+├── client/                    # React-клиент (Vite)
+│   ├── src/
+│   │   ├── components/        # UI-компоненты (ListingList, ChatModal, Inbox и др.)
+│   │   ├── AuthContext.jsx    # состояние авторизации
+│   │   ├── ChatContext.jsx    # состояние чата и сокетов
+│   │   ├── socket.js          # клиент Socket.IO
+│   │   └── App.css            # глобальные стили (включая стили чата)
+│   └── package.json
+├── db/
+│   ├── index.js               # выбор БД по DB_TYPE, единый интерфейс
+│   ├── mongo/                 # Mongoose: models/ (Listing, User, Conversation, Message) и репозитории
+│   └── postgres/              # Sequelize: models.js и репозитории
+├── controllers/               # логика обработчиков запросов
+├── routes/                    # маршруты Express
+├── middleware/                # авторизация, обработка ошибок
+├── sockets/                   # обработчики событий Socket.IO
+├── scripts/seed.js            # тестовые данные для любой из баз
+├── server.js                  # точка входа (Express + HTTP + Socket.IO)
+├── .env                       # переменные окружения
+└── package.json
 ```
-
-## Связь с предыдущими работами
-
-Реализация на PostgreSQL + Sequelize находится в ветке `lab25`. В ветке `lab26` сервер переписан под MongoDB, маршруты и формат ответов сохранены.
