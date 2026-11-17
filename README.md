@@ -1,149 +1,125 @@
-# Listings API — Лабораторная работа №6 (MongoDB + Mongoose)
+# Лабораторная работа №8. Контейнеризация приложения с Docker
 
-REST API для платформы продажи и обмена подержанными вещами. Это альтернативная реализация сервера из ЛР №1–5: реляционная БД PostgreSQL (Sequelize) заменена на документную **MongoDB** (ODM **Mongoose**). Внешний контракт API сохранён, поэтому React-клиент из ЛР №5 работает без изменений.
+Платформа для продажи и обмена подержанных вещей («Барахолка»): React + Express + Socket.IO.
+Проект работает с двумя базами данных на выбор (MongoDB или PostgreSQL) и упакован в Docker-контейнеры.
+Запускается одной командой `docker compose up --build`.
 
-Ветка репозитория: `lab26`
+Ветка репозитория: `lab28`
 
-## Стек
+## Состав контейнеров
 
-Node.js, Express.js, MongoDB Atlas (кластер M0), Mongoose, JWT (jsonwebtoken), bcrypt, cors, multer, dotenv.
-
-## Модель данных (документная)
-
-### Коллекция `listings`
-
-| Поле | Тип | Описание |
-|---|---|---|
-| `_id` | ObjectId | Идентификатор (в API отдаётся как строка `id`) |
-| `title` | String | Название (обязательное) |
-| `description` | String | Описание |
-| `category` | String | Категория (обязательное) |
-| `price` | Number | Цена; 0 означает обмен |
-| `dealType` | String | `sale` / `exchange`, вычисляется автоматически из цены |
-| `condition` | String | `new` / `used` / `for_parts` |
-| `status` | String | `available` / `reserved` / `sold` |
-| `image` | String | Ссылка на фото |
-| `viewsCount` | Number | Счётчик просмотров |
-| `sellerId` | ObjectId → `users` | Владелец объявления |
-| `tags` | **[String]** | **Массив** тегов |
-| `location` | **{ city, district }** | **Вложенный объект** |
-| `comments` | **[ { userId, author, text, likes, createdAt } ]** | **Массив вложенных документов** |
-| `createdAt` / `updatedAt` | Date | Заполняются автоматически |
-
-### Коллекция `users`
-
-`email` (уникальный индекс), `passwordHash` (bcrypt), `role` (`user` / `admin`), `createdAt`, `updatedAt`.
-
-### Чем это отличается от PostgreSQL
-
-В реляционной схеме комментарии и теги пришлось бы выносить в отдельные таблицы (`Comments`, `Tags`, связующая `ListingTags`) и собирать через `JOIN`. В MongoDB объявление вместе с комментариями, тегами и адресом хранится одним документом, который читается одним запросом. Платой за это становятся дублирование данных и сложность запросов, которые охватывают много документов.
-
-## Установка и запуск
-
-### 1. MongoDB Atlas
-1. Зарегистрироваться на cloud.mongodb.com, создать бесплатный кластер M0.
-2. Создать пользователя базы данных, сохранить пароль.
-3. В Network Access добавить свой IP.
-4. Connect → Drivers → скопировать строку подключения и дописать имя базы `listings_db`.
-
-> Если `mongodb+srv://` не подключается (ошибка `queryTxt ETIMEOUT`), смените DNS на `1.1.1.1` / `8.8.8.8` или используйте строку подключения без `+srv`.
-
-### 2. Зависимости
-```bash
-npm install
-```
-
-### 3. Файл `.env` в корне
-```env
-MONGO_URI=mongodb+srv://ЛОГИН:ПАРОЛЬ@cluster0.xxxxx.mongodb.net/listings_db?retryWrites=true&w=majority&appName=Cluster0
-JWT_SECRET=длинная-случайная-строка-минимум-32-символа
-```
-Сгенерировать секрет:
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-`.env` не входит в систему контроля версий.
-
-### 4. Тестовые данные (один раз)
-```bash
-npm run seed
-```
-Скрипт очищает коллекции и создаёт 2 пользователей и 4 объявления.
-- администратор: `admin@listings.local` / `Admin12345!`
-- пользователь: `seller@test.com` / `MyPass123`
-
-### 5. Запуск
-```bash
-npm run dev
-```
-Сервер: `http://localhost:3000`. Клиент (папка `client`) запускается отдельно командой `npm run dev` в ней.
-
-## Маршруты API
-
-### Объявления
-
-| Метод | Путь | Описание | Доступ | Статусы |
+| Сервис | Образ | Назначение | Порт | Профиль |
 |---|---|---|---|---|
-| GET | `/listings` | Список. Параметры: `search`, `category`, `tag`, `city`, `minPrice`, `maxPrice`, `sort`, `limit`, `offset`. Общее число в заголовке `X-Total-Count` | все | 200 |
-| GET | `/listings/:id` | Одно объявление (счётчик просмотров +1 через `$inc`) | все | 200, 400, 404 |
-| POST | `/listings` | Создать (владелец берётся из токена) | токен | 201, 400, 401 |
-| PUT | `/listings/:id` | Изменить | владелец / админ | 200, 400, 401, 403, 404 |
-| DELETE | `/listings/:id` | Удалить, в ответе удалённый документ | владелец / админ | 200, 401, 403, 404 |
-| POST | `/listings/upload` | Загрузить фото (`multipart/form-data`, поле `image`) | токен | 201, 400, 401 |
+| `frontend` | собственный (Node 22 → Nginx) | React-сборка и reverse-proxy на backend | 80 | всегда |
+| `backend` | собственный (Node 22) | Express API + Socket.IO | 3000 | всегда |
+| `mongo` | `mongo:7` | MongoDB (том `mongo_data`) | внутри сети | `mongo` |
+| `mongo-express` | `mongo-express:1.0.2` | веб-интерфейс MongoDB | 8081 | `mongo` |
+| `postgres` | `postgres:16-alpine` | PostgreSQL (том `pgdata`) | внутри сети | `postgres` |
+| `pgadmin` | `dpage/pgadmin4:8` | веб-интерфейс PostgreSQL | 5050 | `postgres` |
 
-### Вложенные документы (комментарии)
+База выбирается переменной `DB_TYPE`, а контейнеры нужной БД включаются профилем Compose (`COMPOSE_PROFILES`).
+Контейнеры неиспользуемой базы не запускаются.
 
-| Метод | Путь | Описание | Оператор MongoDB |
-|---|---|---|---|
-| POST | `/listings/:id/comments` | Добавить комментарий | `$push` |
-| POST | `/listings/:id/comments/:commentId/like` | Поставить лайк комментарию (обновление элемента внутри массива) | `$inc` + позиционный `$` |
-| DELETE | `/listings/:id/comments/:commentId` | Удалить комментарий (автор или админ) | `$pull` |
+## Dockerfile
 
-### Аутентификация
+- **Backend (`Dockerfile`)**: `node:22-alpine`, сначала копируются только `package*.json` и ставятся
+  зависимости (`npm ci --omit=dev`), затем код. Так слой с зависимостями кэшируется. Приложение запускается
+  не от root, а от пользователя `node`.
+- **Frontend (`client/Dockerfile`)**: многоэтапная сборка. На первом этапе (`node:22-alpine`) выполняется
+  `npm run build`, на втором (`nginx:alpine`) в образ копируется только готовая папка `dist`
+  (`COPY --from=builder`). Итоговый образ не содержит Node.js и исходников.
 
-| Метод | Путь | Описание | Доступ |
-|---|---|---|---|
-| POST | `/auth/register` | Регистрация | все |
-| POST | `/auth/login` | Вход, выдача JWT | все |
-| GET | `/profile` | Текущий пользователь | токен |
-| GET | `/admin/users` | Список пользователей | токен + роль `admin` |
+Версия Node 22 вместо 18 из методички нужна потому, что зависимости проекта (mongoose 9, vite 8)
+требуют Node 20 и выше.
 
-Токен передаётся заголовком `Authorization: Bearer <token>`. Идентификаторы `:id` и `:commentId` — это ObjectId (24 hex-символа), при неверном формате сервер возвращает 400.
+## Реализованные дополнительные требования
 
-## Использованные возможности Mongoose
+- **Переменные окружения**: секреты (`JWT_SECRET`, пароли БД) хранятся в `.env`, который не попадает в репозиторий.
+- **Healthcheck backend**: эндпоинт `GET /health` возвращает 200, если выбранная база отвечает, иначе 503.
+- **Healthcheck БД с `service_healthy`**: backend запускается только после готовой базы, frontend после готового backend.
+- **mongo-express и pgAdmin**: веб-интерфейсы для управления базами.
+- **Reverse-proxy (Nginx)**: раздаёт React-сборку и проксирует `/listings`, `/auth`, `/profile`, `/admin`,
+  `/uploads` и WebSocket `/socket.io/` на backend, поэтому браузер работает с одним адресом.
+- **Изоляция сетей**: `public_net` (frontend, backend, веб-интерфейсы БД) и внутренняя `db_net`
+  (`internal: true`), в которой находятся базы данных. Снаружи и из frontend БД недоступна.
+- **Тома**: данные БД (`mongo_data` или `pgdata`) и загруженные фото (`uploads`) сохраняются при пересоздании контейнеров.
 
-- схемы и модели, вложенный документ (`commentSchema`), массивы, вложенный объект;
-- валидация (`required`, `enum`, `min`, `maxlength`, `match`) и хук `pre('validate')` для пересчёта `dealType`;
-- метод экземпляра `canBeModifiedBy`;
-- индексы: уникальный по `users.email`, составной `{category, price}`, по `tags`;
-- цепочки запросов `find().sort().skip().limit()`, `countDocuments`;
-- `findByIdAndUpdate`, `findOneAndUpdate`, `findByIdAndDelete`, `updateOne`;
-- `toJSON`-преобразование (`_id` → `id`).
+## Запуск
+
+1. Установите Docker Desktop и запустите его.
+2. В `.env` в корне проекта должны быть:
+
+   ```env
+   DB_TYPE=postgres
+   COMPOSE_PROFILES=postgres
+   JWT_SECRET=любая_длинная_случайная_строка
+   ```
+
+   `COMPOSE_PROFILES` должен совпадать с `DB_TYPE` (`postgres` или `mongo`). Остальные переменные
+   (пароли БД и т. п.) имеют значения по умолчанию, пример полного набора в `.env.example`.
+
+3. Соберите и запустите:
+
+   ```bash
+   docker compose up --build
+   ```
+
+   Чтобы запустить с другой базой без правки `.env`:
+
+   ```bash
+   DB_TYPE=mongo COMPOSE_PROFILES=mongo docker compose up --build
+   ```
+
+4. Заполните базу тестовыми данными (один раз, в соседнем терминале):
+
+   ```bash
+   docker compose exec backend npm run seed
+   ```
+
+5. Проверка работы:
+   - сайт: http://localhost
+   - backend: http://localhost:3000 и http://localhost:3000/health (в ответе указана текущая БД)
+   - mongo-express: http://localhost:8081 (`admin` / `admin123`) или pgAdmin: http://localhost:5050 (`admin@example.com` / `admin123`)
+   - список контейнеров: `docker ps`
+
+Тестовые аккаунты: `admin@listings.local` / `Admin12345!` и `seller@test.com` / `MyPass123`.
+У каждой базы свои данные (отдельные тома), при переключении `DB_TYPE` содержимое не переносится.
+
+## Полезные команды
+
+```bash
+docker ps                          # список контейнеров
+docker compose logs -f backend     # логи backend
+docker compose exec backend sh     # оболочка внутри контейнера
+docker compose down                # остановить (данные в томах сохраняются)
+docker compose down -v             # остановить и удалить тома (БД и фото будут стёрты)
+```
+
+## Доступ к образам в Беларуси
+
+Если Docker Hub недоступен, в Docker Desktop (Settings → Docker Engine) добавлены зеркала:
+
+```json
+{
+  "registry-mirrors": ["https://mirror.gcr.io", "https://dockerhub.timeweb.cloud"]
+}
+```
 
 ## Структура проекта
 
-```
+```text
 listings-api/
-├── client/                    # React-клиент (ЛР №5), без изменений
-├── controllers/
-│   ├── listingsController.js
-│   ├── authController.js
-│   └── adminController.js
-├── middleware/                # auth, isAdmin, errorHandler
-├── models/
-│   ├── index.js
-│   ├── listing.js
-│   └── user.js
-├── routes/
-├── scripts/
-│   └── seed.js                # тестовые данные
-├── uploads/                   # загруженные фото (не в git)
-├── db.js                      # подключение к MongoDB
-├── server.js
-├── .env
+├── client/
+│   ├── Dockerfile          # многоэтапная сборка: node (build) -> nginx
+│   ├── nginx.conf          # раздача статики и reverse-proxy
+│   ├── .dockerignore
+│   └── src/ ...
+├── db/                     # слой доступа к данным (mongo / postgres)
+├── controllers/ routes/ sockets/ middleware/ scripts/
+├── server.js               # + эндпоинт /health
+├── Dockerfile              # backend
+├── .dockerignore
+├── docker-compose.yml      # профили mongo / postgres
+├── .env.example
 └── README.md
 ```
-
-## Связь с предыдущими работами
-
-Реализация на PostgreSQL + Sequelize находится в ветке `lab25`. В ветке `lab26` сервер переписан под MongoDB, маршруты и формат ответов сохранены.

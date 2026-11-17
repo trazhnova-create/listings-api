@@ -1,7 +1,9 @@
 import { io } from 'socket.io-client';
 
-export const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:3000', {
+const SOCKET_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+
+export const socket = io(SOCKET_URL || undefined, {
   autoConnect: false,
-  
+
   auth: (cb) => cb({ token: localStorage.getItem('token') }),
 });

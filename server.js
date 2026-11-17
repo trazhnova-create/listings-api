@@ -32,6 +32,11 @@ app.use((req, res, next) => {
   next();
 });
 
+app.get('/health', async (req, res) => {
+  const dbReady = await db.isHealthy();
+  res.status(dbReady ? 200 : 503).json({ status: dbReady ? 'ok' : 'db_unavailable', db: db.type });
+});
+
 app.get('/', (req, res) => {
   res.status(200).json({
     message: `Listings API is running (${db.type === 'postgres' ? 'PostgreSQL' : 'MongoDB'} + Socket.IO)`,
