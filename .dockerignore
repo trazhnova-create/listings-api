@@ -3,10 +3,10 @@ npm-debug.log
 .git
 .gitignore
 .env
-.env.*
+.env.local
 uploads
 client
 docker-compose.yml
 Dockerfile
 .dockerignore
-*.md
+README.md
